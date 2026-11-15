@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../combat/encounter.dart';
 import '../log/log_repository.dart';
+import 'combat_screen.dart';
 import 'dice_screen.dart';
 import 'log_screen.dart';
 
@@ -15,6 +17,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _logTab = 2;
+
+  /// The running encounter. Kept here so it survives switching tabs.
+  late final _encounter = Encounter(log: widget.log);
+
   int _index = 0;
 
   /// Counts openings of the log tab so it reloads its entries each time.
@@ -27,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _index,
         children: [
           DiceScreen(log: widget.log),
+          CombatScreen(encounter: _encounter),
           LogScreen(key: ValueKey(_logVisits), log: widget.log),
         ],
       ),
@@ -34,13 +42,18 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() {
           _index = index;
-          if (index == 1) _logVisits++;
+          if (index == _logTab) _logVisits++;
         }),
         destinations: const [
           NavigationDestination(
             key: Key('nav-dice'),
             icon: Icon(Icons.casino_outlined),
             label: 'Würfler',
+          ),
+          NavigationDestination(
+            key: Key('nav-combat'),
+            icon: Icon(Icons.shield_outlined),
+            label: 'Kampf',
           ),
           NavigationDestination(
             key: Key('nav-log'),

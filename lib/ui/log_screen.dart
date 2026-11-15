@@ -26,8 +26,9 @@ class _LogScreenState extends State<LogScreen> {
   /// Session to show; null shows all sessions.
   int? _sessionFilter;
 
-  /// Ids of entries whose details are currently unfolded.
-  final _expanded = <int>{};
+  /// Unfolded details: entry id to the index of the tapped value within
+  /// that entry's line.
+  final _expanded = <int, int>{};
 
   bool _loading = true;
 
@@ -149,11 +150,14 @@ class _LogScreenState extends State<LogScreen> {
   Widget _buildEntry(BuildContext context, LogEntry entry) {
     final theme = Theme.of(context);
     final line = widget.formatter.format(entry.event);
-    final expanded = _expanded.contains(entry.id);
-    final details = [
+    final tappable = [
       for (final span in line.spans)
-        if (span.hasDetails) ...span.details,
+        if (span.hasDetails) span,
     ];
+    final expandedIndex = _expanded[entry.id];
+    final details = expandedIndex == null
+        ? const <String>[]
+        : tappable[expandedIndex].details;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -191,27 +195,12 @@ class _LogScreenState extends State<LogScreen> {
                   children: [
                     for (final span in line.spans)
                       if (span.hasDetails)
-                        InkWell(
-                          key: Key('log-value-${entry.id}'),
-                          onTap: () => setState(() {
-                            if (!_expanded.remove(entry.id)) {
-                              _expanded.add(entry.id);
-                            }
-                          }),
-                          child: Text(
-                            span.text,
-                            style: TextStyle(
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        )
+                        _buildValue(theme, entry, tappable.indexOf(span), span)
                       else
                         Text(span.text),
                   ],
                 ),
-                if (expanded)
+                if (expandedIndex != null)
                   Container(
                     margin: const EdgeInsets.only(top: 4),
                     padding: const EdgeInsets.all(8),
@@ -228,6 +217,31 @@ class _LogScreenState extends State<LogScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// A tappable value. The first one in a line has the key
+  /// `log-value-<entry id>`, further ones `log-value-<entry id>-<index>`.
+  Widget _buildValue(ThemeData theme, LogEntry entry, int index, LogSpan span) {
+    return InkWell(
+      key: Key(
+        index == 0 ? 'log-value-${entry.id}' : 'log-value-${entry.id}-$index',
+      ),
+      onTap: () => setState(() {
+        if (_expanded[entry.id] == index) {
+          _expanded.remove(entry.id);
+        } else {
+          _expanded[entry.id] = index;
+        }
+      }),
+      child: Text(
+        span.text,
+        style: TextStyle(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.bold,
+          decoration: TextDecoration.underline,
+        ),
       ),
     );
   }

@@ -130,6 +130,54 @@ void main() {
     });
   });
 
+  group('Log-Bildschirm: Einträge mit mehreren antippbaren Werten', () {
+    Future<InMemoryLogRepository> initiativeLog() async {
+      final log = InMemoryLogRepository();
+      await log.add(
+        InitiativeEvent([
+          InitiativeEntry(
+            name: 'Aria',
+            roll: RollRecord(
+              count: 1,
+              sides: 20,
+              rolls: [15],
+              modifiers: [Modifier('Initiative', 2)],
+            ),
+          ),
+          InitiativeEntry(name: 'Goblin', roll: RollRecord.manualD20(12)),
+        ]),
+      );
+      return log;
+    }
+
+    testWidgets('Jeder Wert zeigt beim Antippen nur seine eigenen Details', (
+      tester,
+    ) async {
+      await pumpLogScreen(tester, await initiativeLog());
+      expect(lineText(tester, 1), 'Initiative: Aria 17, Goblin 12');
+
+      await tester.tap(find.byKey(const Key('log-value-1-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1d20 von Hand: 12'), findsOneWidget);
+      expect(find.text('+2 Initiative'), findsNothing);
+    });
+
+    testWidgets('Ein Tipp auf einen anderen Wert wechselt die Details', (
+      tester,
+    ) async {
+      await pumpLogScreen(tester, await initiativeLog());
+
+      await tester.tap(find.byKey(const Key('log-value-1-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('log-value-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('+2 Initiative'), findsOneWidget);
+      expect(find.text('1d20 von Hand: 12'), findsNothing);
+    });
+  });
+
   group('Log-Bildschirm: Sessions', () {
     Future<InMemoryLogRepository> twoSessions() async {
       final log = InMemoryLogRepository();
