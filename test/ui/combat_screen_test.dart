@@ -376,4 +376,106 @@ void main() {
       expect(events.last, isA<CombatantDownEvent>());
     });
   });
+
+  group('Kampf-Bildschirm: Trefferpunkte direkt ändern', () {
+    testWidgets('Über "TP ändern" lässt sich Schaden eintragen, die '
+        'Trefferpunkte sinken und die Änderung wird angezeigt', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '3');
+      await tapKey(tester, 'hp-damage');
+
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 4/7');
+      expect(textOf(tester, 'last-action'), 'Goblin erleidet 3 Schaden');
+    });
+
+    testWidgets('Über "TP ändern" lässt sich Heilung eintragen, die '
+        'Trefferpunkte steigen', (tester) async {
+      final scene = Scene([]);
+      scene.aria.hp = 5;
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await type(tester, 'hp-amount', '4');
+      await tapKey(tester, 'hp-heal');
+
+      expect(textOf(tester, 'stats-0'), 'RK 16 · TP 9/20');
+      expect(textOf(tester, 'last-action'), 'Aria wird um 4 TP geheilt');
+    });
+
+    testWidgets('Eine eingetragene Quelle landet im Log', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '3');
+      await type(tester, 'hp-source', 'Feuerball');
+      await tapKey(tester, 'hp-damage');
+
+      final event = (await scene.events()).single as HpChangeEvent;
+      expect(event.source, 'Feuerball');
+      expect(event.amount, 3);
+    });
+
+    testWidgets('Ohne Betrag bleibt das Fenster offen, es erscheint eine '
+        'Meldung und nichts ändert sich', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await tapKey(tester, 'hp-damage');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.goblin.hp, 7);
+      expect(await scene.events(), isEmpty);
+    });
+
+    testWidgets('Ein Betrag von 0 wird abgelehnt', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '0');
+      await tapKey(tester, 'hp-heal');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(await scene.events(), isEmpty);
+    });
+
+    testWidgets('Schaden bis 0 markiert den Kämpfer als "am Boden", Heilung '
+        'hebt die Markierung wieder auf', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+      final downBadge = find.descendant(
+        of: find.byKey(const Key('combatant-1')),
+        matching: find.text('am Boden'),
+      );
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '7');
+      await tapKey(tester, 'hp-damage');
+      expect(downBadge, findsOneWidget);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '2');
+      await tapKey(tester, 'hp-heal');
+      expect(downBadge, findsNothing);
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 2/7');
+    });
+
+    testWidgets('Die Trefferpunkte lassen sich auch im laufenden Kampf '
+        'ändern', (tester) async {
+      final scene = Scene([10, 5]);
+      await scene.pump(tester);
+      await startCombat(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '2');
+      await tapKey(tester, 'hp-damage');
+
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 5/7');
+    });
+  });
 }

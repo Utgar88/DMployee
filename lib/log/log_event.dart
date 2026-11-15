@@ -23,6 +23,7 @@ sealed class LogEvent {
       InitiativeEvent.typeName => InitiativeEvent.fromJson(json),
       RoundEvent.typeName => RoundEvent.fromJson(json),
       CombatantDownEvent.typeName => CombatantDownEvent.fromJson(json),
+      HpChangeEvent.typeName => HpChangeEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

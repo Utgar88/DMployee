@@ -91,6 +91,16 @@ class _CombatScreenState extends State<CombatScreen> {
     setState(() => _lastAction = line.text);
   }
 
+  Future<void> _changeHp(Combatant combatant) async {
+    final event = await showDialog<HpChangeEvent>(
+      context: context,
+      builder: (context) =>
+          _HpDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (event == null || !mounted) return;
+    setState(() => _lastAction = widget.formatter.format(event).text);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -209,10 +219,25 @@ class _CombatScreenState extends State<CombatScreen> {
                   ),
               ],
             ),
-            Text(
-              'RK ${combatant.armorClass} · '
-              'TP ${combatant.hp}/${combatant.maxHp}',
-              key: Key('stats-$index'),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'RK ${combatant.armorClass} · '
+                    'TP ${combatant.hp}/${combatant.maxHp}',
+                    key: Key('stats-$index'),
+                  ),
+                ),
+                TextButton.icon(
+                  key: Key('hp-$index'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _changeHp(combatant),
+                  icon: const Icon(Icons.favorite_border, size: 18),
+                  label: const Text('TP ändern'),
+                ),
+              ],
             ),
             if (combatant.initiative != null)
               Text(
@@ -737,6 +762,104 @@ class _TargetDialogState extends State<_TargetDialog> {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _attackTarget(combatant),
                 ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Damage or healing for one combatant without an attack.
+class _HpDialog extends StatefulWidget {
+  const _HpDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_HpDialog> createState() => _HpDialogState();
+}
+
+class _HpDialogState extends State<_HpDialog> {
+  final _amount = TextEditingController();
+  final _source = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _source.dispose();
+    super.dispose();
+  }
+
+  Future<void> _apply({required bool healing}) async {
+    final amount = int.tryParse(_amount.text);
+    if (amount == null || amount < 1) {
+      setState(() => _errorText = 'Bitte einen Betrag ab 1 eintragen.');
+      return;
+    }
+    final encounter = widget.encounter;
+    final event = healing
+        ? await encounter.heal(widget.combatant, amount, source: _source.text)
+        : await encounter.damage(
+            widget.combatant,
+            amount,
+            source: _source.text,
+          );
+    if (mounted) Navigator.pop(context, event);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final combatant = widget.combatant;
+
+    return AlertDialog(
+      title: Text('${combatant.name}: TP ${combatant.hp}/${combatant.maxHp}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _field(
+              'hp-amount',
+              'Betrag',
+              _amount,
+              formatters: _digits,
+              number: true,
+            ),
+            _field(
+              'hp-source',
+              'Quelle (optional)',
+              _source,
+              helper: 'z. B. Feuerball, Heiltrank, Falle',
+            ),
+            if (_errorText != null) _error(context, _errorText!),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonal(
+                    key: const Key('hp-damage'),
+                    onPressed: () => _apply(healing: false),
+                    child: const Text('Schaden'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonal(
+                    key: const Key('hp-heal'),
+                    onPressed: () => _apply(healing: true),
+                    child: const Text('Heilung'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

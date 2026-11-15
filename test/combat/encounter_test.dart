@@ -461,4 +461,148 @@ void main() {
       expect((events.last as CombatantDownEvent).name, 'Goblin');
     });
   });
+
+  group('Trefferpunkte direkt ändern: Schaden', () {
+    test('Schaden wird von den Trefferpunkten abgezogen', () async {
+      final scene = Scene([]);
+
+      await scene.encounter.damage(scene.goblin, 3);
+
+      expect(scene.goblin.hp, 4);
+    });
+
+    test('Die Trefferpunkte fallen durch Schaden nie unter 0, der Kämpfer '
+        'geht zu Boden', () async {
+      final scene = Scene([]);
+
+      await scene.encounter.damage(scene.goblin, 50);
+
+      expect(scene.goblin.hp, 0);
+      expect(scene.goblin.isDown, isTrue);
+    });
+
+    test('Ein Betrag von 0 oder weniger wird abgelehnt und ändert '
+        'nichts', () async {
+      final scene = Scene([]);
+
+      expect(
+        () => scene.encounter.damage(scene.goblin, 0),
+        throwsArgumentError,
+      );
+      expect(
+        () => scene.encounter.damage(scene.goblin, -2),
+        throwsArgumentError,
+      );
+      expect(scene.goblin.hp, 7);
+      expect(await scene.events(), isEmpty);
+    });
+  });
+
+  group('Trefferpunkte direkt ändern: Heilung', () {
+    test('Heilung wird zu den Trefferpunkten addiert', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.aria, 15);
+
+      await scene.encounter.heal(scene.aria, 4);
+
+      expect(scene.aria.hp, 9);
+    });
+
+    test('Heilung hebt die Trefferpunkte nie über das Maximum', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.aria, 3);
+
+      await scene.encounter.heal(scene.aria, 50);
+
+      expect(scene.aria.hp, 20);
+    });
+
+    test('Heilung bringt einen Kämpfer am Boden zurück, er ist wieder an '
+        'der Zugfolge beteiligt', () async {
+      final scene = Scene([10, 5]);
+      await scene.encounter.rollInitiative();
+      await scene.encounter.damage(scene.goblin, 7);
+      expect(scene.goblin.isDown, isTrue);
+
+      await scene.encounter.heal(scene.goblin, 2);
+      await scene.encounter.nextTurn();
+
+      expect(scene.goblin.isDown, isFalse);
+      expect(scene.encounter.current, scene.goblin);
+    });
+
+    test('Ein Betrag von 0 oder weniger wird abgelehnt und ändert '
+        'nichts', () async {
+      final scene = Scene([]);
+
+      expect(() => scene.encounter.heal(scene.aria, 0), throwsArgumentError);
+      expect(scene.aria.hp, 20);
+      expect(await scene.events(), isEmpty);
+    });
+  });
+
+  group('Trefferpunkte direkt ändern: Log', () {
+    test('Schaden steht mit Kämpfer, Betrag, Quelle und den Trefferpunkten '
+        'vorher und nachher im Log', () async {
+      final scene = Scene([]);
+
+      await scene.encounter.damage(scene.goblin, 3, source: 'Feuerball');
+
+      final event = (await scene.events()).single as HpChangeEvent;
+      expect(event.name, 'Goblin');
+      expect(event.healing, isFalse);
+      expect(event.amount, 3);
+      expect(event.source, 'Feuerball');
+      expect(event.hpBefore, 7);
+      expect(event.hpAfter, 4);
+      expect(event.maxHp, 7);
+    });
+
+    test('Heilung steht als Heilung im Log', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.aria, 15);
+
+      await scene.encounter.heal(scene.aria, 4, source: 'Heiltrank');
+
+      final event = (await scene.events()).last as HpChangeEvent;
+      expect(event.healing, isTrue);
+      expect(event.amount, 4);
+      expect(event.source, 'Heiltrank');
+      expect(event.hpBefore, 5);
+      expect(event.hpAfter, 9);
+    });
+
+    test('Der eingetragene Betrag bleibt im Log erhalten, auch wenn nur ein '
+        'Teil davon wirkt', () async {
+      final scene = Scene([]);
+
+      await scene.encounter.damage(scene.goblin, 50);
+
+      final event = (await scene.events()).first as HpChangeEvent;
+      expect(event.amount, 50);
+      expect(event.hpAfter, 0);
+    });
+
+    test('Geht der Kämpfer durch den Schaden zu Boden, folgt ein eigener '
+        'Log-Eintrag', () async {
+      final scene = Scene([]);
+
+      await scene.encounter.damage(scene.goblin, 7);
+
+      final events = await scene.events();
+      expect(events, hasLength(2));
+      expect((events.last as CombatantDownEvent).name, 'Goblin');
+    });
+
+    test('Schaden an einem Kämpfer, der schon am Boden liegt, meldet ihn '
+        'nicht erneut als zu Boden gegangen', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.goblin, 7);
+
+      await scene.encounter.damage(scene.goblin, 2);
+
+      final events = await scene.events();
+      expect(events.whereType<CombatantDownEvent>(), hasLength(1));
+    });
+  });
 }

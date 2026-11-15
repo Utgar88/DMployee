@@ -39,6 +39,7 @@ class LogFormatter {
       InitiativeEvent() => _initiative(event),
       RoundEvent() => LogLine([LogSpan('Runde ${event.round} beginnt')]),
       CombatantDownEvent() => LogLine([LogSpan('${event.name} geht zu Boden')]),
+      HpChangeEvent() => _hpChange(event),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -97,6 +98,22 @@ class LogFormatter {
         LogSpan('${index == 0 ? '' : ', '}${entry.name} '),
         LogSpan('${entry.roll.total}', details: rollDetails(entry.roll)),
       ],
+    ]);
+  }
+
+  LogLine _hpChange(HpChangeEvent event) {
+    final source = event.source == null ? '' : ' (${event.source})';
+    final details = [
+      if (event.source != null) 'Quelle: ${event.source}',
+      'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
+          '(Maximum ${event.maxHp})',
+      if (event.effective != event.amount) 'Davon wirksam: ${event.effective}',
+    ];
+
+    return LogLine([
+      LogSpan('${event.name} ${event.healing ? 'wird um' : 'erleidet'} '),
+      LogSpan('${event.amount}', details: details),
+      LogSpan('${event.healing ? ' TP geheilt' : ' Schaden'}$source'),
     ]);
   }
 

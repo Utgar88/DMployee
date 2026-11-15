@@ -229,4 +229,113 @@ void main() {
       );
     });
   });
+
+  group('Log-Zeilen für direkt geänderte Trefferpunkte', () {
+    const damage = HpChangeEvent(
+      name: 'Goblin',
+      amount: 5,
+      healing: false,
+      hpBefore: 7,
+      hpAfter: 2,
+      maxHp: 7,
+    );
+    const healing = HpChangeEvent(
+      name: 'Aria',
+      amount: 6,
+      healing: true,
+      hpBefore: 5,
+      hpAfter: 11,
+      maxHp: 20,
+      source: 'Heiltrank',
+    );
+
+    test('Schaden nennt Kämpfer und Betrag', () {
+      expect(formatter.format(damage).text, 'Goblin erleidet 5 Schaden');
+    });
+
+    test('Heilung nennt Kämpfer und Betrag', () {
+      expect(
+        formatter.format(healing).text,
+        'Aria wird um 6 TP geheilt (Heiltrank)',
+      );
+    });
+
+    test('Eine angegebene Quelle steht in Klammern hinter der Zeile', () {
+      const fireball = HpChangeEvent(
+        name: 'Goblin',
+        amount: 5,
+        healing: false,
+        hpBefore: 7,
+        hpAfter: 2,
+        maxHp: 7,
+        source: 'Feuerball',
+      );
+
+      expect(
+        formatter.format(fireball).text,
+        'Goblin erleidet 5 Schaden (Feuerball)',
+      );
+    });
+
+    test('Der Betrag ist antippbar und zeigt die Trefferpunkte vorher und '
+        'nachher', () {
+      final tappable = formatter
+          .format(damage)
+          .spans
+          .where((span) => span.hasDetails);
+
+      expect(tappable.single.text, '5');
+      expect(detailsOf(damage), ['Trefferpunkte: 7 → 2 (Maximum 7)']);
+    });
+
+    test('Die Details nennen die Quelle', () {
+      expect(detailsOf(healing), [
+        'Quelle: Heiltrank',
+        'Trefferpunkte: 5 → 11 (Maximum 20)',
+      ]);
+    });
+
+    test('Wirkt nur ein Teil des Betrags, nennen die Details den wirksamen '
+        'Teil', () {
+      const overkill = HpChangeEvent(
+        name: 'Goblin',
+        amount: 50,
+        healing: false,
+        hpBefore: 7,
+        hpAfter: 0,
+        maxHp: 7,
+      );
+
+      expect(detailsOf(overkill), [
+        'Trefferpunkte: 7 → 0 (Maximum 7)',
+        'Davon wirksam: 7',
+      ]);
+    });
+
+    test('Eine Änderung der Trefferpunkte ist kein freier Wurf', () {
+      expect(formatter.format(damage).isFreeRoll, isFalse);
+    });
+
+    test('Die Änderung kommt nach dem Speichern und Laden (JSON) mit allen '
+        'Angaben zurück', () {
+      final restored =
+          LogEvent.fromJson(healing.type, healing.toJson()) as HpChangeEvent;
+
+      expect(restored.name, 'Aria');
+      expect(restored.amount, 6);
+      expect(restored.healing, isTrue);
+      expect(restored.hpBefore, 5);
+      expect(restored.hpAfter, 11);
+      expect(restored.maxHp, 20);
+      expect(restored.source, 'Heiltrank');
+    });
+
+    test('Ohne Quelle kommt die Änderung ohne Quelle zurück', () {
+      final restored =
+          LogEvent.fromJson(damage.type, damage.toJson()) as HpChangeEvent;
+
+      expect(restored.source, isNull);
+      expect(restored.healing, isFalse);
+    });
+  });
 }

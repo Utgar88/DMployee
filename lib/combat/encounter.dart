@@ -229,6 +229,56 @@ class Encounter {
     );
   }
 
+  /// Deals [amount] damage to [target] without an attack, e.g. from a spell
+  /// or a trap. Hit points never drop below 0.
+  ///
+  /// An [amount] below 1 throws an [ArgumentError] and changes nothing.
+  Future<HpChangeEvent> damage(
+    Combatant target,
+    int amount, {
+    String? source,
+  }) => _changeHp(target, amount, healing: false, source: source);
+
+  /// Heals [target] by [amount]. Hit points never rise above the maximum; a
+  /// combatant at 0 hit points is back on their feet.
+  ///
+  /// An [amount] below 1 throws an [ArgumentError] and changes nothing.
+  Future<HpChangeEvent> heal(Combatant target, int amount, {String? source}) =>
+      _changeHp(target, amount, healing: true, source: source);
+
+  Future<HpChangeEvent> _changeHp(
+    Combatant target,
+    int amount, {
+    required bool healing,
+    String? source,
+  }) async {
+    if (amount < 1) {
+      throw ArgumentError.value(amount, 'amount', 'must be at least 1');
+    }
+
+    final hpBefore = target.hp;
+    final wasDown = target.isDown;
+    target.hp = healing
+        ? (hpBefore + amount > target.maxHp ? target.maxHp : hpBefore + amount)
+        : (amount >= hpBefore ? 0 : hpBefore - amount);
+
+    final trimmed = source?.trim();
+    final event = HpChangeEvent(
+      name: target.name,
+      amount: amount,
+      healing: healing,
+      hpBefore: hpBefore,
+      hpAfter: target.hp,
+      maxHp: target.maxHp,
+      source: trimmed == null || trimmed.isEmpty ? null : trimmed,
+    );
+    await _log.add(event);
+    if (!wasDown && target.isDown) {
+      await _log.add(CombatantDownEvent(target.name));
+    }
+    return event;
+  }
+
   RollRecord _rollDamage(Attack attack, bool critical, int? manualSum) {
     final count = attack.damage.count * (critical ? 2 : 1);
     final sides = attack.damage.sides;

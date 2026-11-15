@@ -145,3 +145,63 @@ class CombatantDownEvent extends LogEvent {
   @override
   Map<String, Object?> toJson() => {'name': name};
 }
+
+/// Hit points of a combatant were changed directly, without an attack:
+/// damage from a spell or a trap, healing from a potion and the like.
+class HpChangeEvent extends LogEvent {
+  const HpChangeEvent({
+    required this.name,
+    required this.amount,
+    required this.healing,
+    required this.hpBefore,
+    required this.hpAfter,
+    required this.maxHp,
+    this.source,
+  });
+
+  factory HpChangeEvent.fromJson(Map<String, Object?> json) {
+    return HpChangeEvent(
+      name: json['name']! as String,
+      amount: json['amount']! as int,
+      healing: json['healing']! as bool,
+      hpBefore: json['hpBefore']! as int,
+      hpAfter: json['hpAfter']! as int,
+      maxHp: json['maxHp']! as int,
+      source: json['source'] as String?,
+    );
+  }
+
+  static const typeName = 'hpChange';
+
+  final String name;
+
+  /// Amount as entered, always positive. The part that took effect is the
+  /// difference between [hpBefore] and [hpAfter].
+  final int amount;
+
+  /// True for healing, false for damage.
+  final bool healing;
+  final int hpBefore;
+  final int hpAfter;
+  final int maxHp;
+
+  /// Where the change came from, e.g. "Feuerball"; optional.
+  final String? source;
+
+  /// The part of [amount] that actually changed the hit points.
+  int get effective => (hpAfter - hpBefore).abs();
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'amount': amount,
+    'healing': healing,
+    'hpBefore': hpBefore,
+    'hpAfter': hpAfter,
+    'maxHp': maxHp,
+    'source': ?source,
+  };
+}
