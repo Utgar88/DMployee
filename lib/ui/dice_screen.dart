@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
+import '../dice/modifier.dart';
 
 /// One finished roll as shown in the result card and the history.
 class _RollEntry {
@@ -73,7 +74,10 @@ class _DiceScreenState extends State<DiceScreen> {
   }
 
   _RollEntry _rollD20(int? dc) {
-    final roll = widget.roller.rollD20(mode: _mode, modifier: _modifier);
+    final roll = widget.roller.rollD20(
+      mode: _mode,
+      modifiers: [if (_modifier != 0) Modifier('Modifier', _modifier)],
+    );
 
     final String detail;
     if (_mode == RollMode.normal) {

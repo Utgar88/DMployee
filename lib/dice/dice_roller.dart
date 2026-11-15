@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'dice_expression.dart';
+import 'modifier.dart';
 
 /// How a d20 is rolled.
 enum RollMode {
@@ -16,17 +17,26 @@ enum RollMode {
 
 /// Outcome of rolling a [DiceExpression].
 class RollResult {
-  RollResult({required this.expression, required List<int> rolls})
-    : rolls = List.unmodifiable(rolls);
+  RollResult({
+    required this.expression,
+    required List<int> rolls,
+    List<Modifier> modifiers = const [],
+  }) : rolls = List.unmodifiable(rolls),
+       modifiers = List.unmodifiable(modifiers);
 
   final DiceExpression expression;
 
   /// Face shown by each die, in roll order.
   final List<int> rolls;
 
-  int get modifier => expression.modifier;
+  /// Named modifiers on top of the flat modifier of the [expression].
+  final List<Modifier> modifiers;
 
-  /// Sum of all dice plus the modifier.
+  /// Everything added to the dice: the expression's flat modifier plus all
+  /// named [modifiers].
+  int get modifier => expression.modifier + Modifier.sum(modifiers);
+
+  /// Sum of all dice plus the [modifier].
   int get total => rolls.fold(0, (sum, face) => sum + face) + modifier;
 }
 
@@ -35,13 +45,19 @@ class D20Result {
   D20Result({
     required List<int> rolls,
     required this.mode,
-    required this.modifier,
-  }) : rolls = List.unmodifiable(rolls);
+    List<Modifier> modifiers = const [],
+  }) : rolls = List.unmodifiable(rolls),
+       modifiers = List.unmodifiable(modifiers);
 
   /// Faces of all rolled d20: one for [RollMode.normal], otherwise two.
   final List<int> rolls;
   final RollMode mode;
-  final int modifier;
+
+  /// Named modifiers added to the counting die.
+  final List<Modifier> modifiers;
+
+  /// Sum of all [modifiers].
+  int get modifier => Modifier.sum(modifiers);
 
   /// The die that counts after applying advantage or disadvantage.
   int get kept => switch (mode) {
@@ -82,21 +98,28 @@ class DiceRoller {
 
   final Random _random;
 
-  RollResult roll(DiceExpression expression) {
+  RollResult roll(
+    DiceExpression expression, {
+    List<Modifier> modifiers = const [],
+  }) {
     return RollResult(
       expression: expression,
+      modifiers: modifiers,
       rolls: [
         for (var i = 0; i < expression.count; i++) _die(expression.sides),
       ],
     );
   }
 
-  D20Result rollD20({RollMode mode = RollMode.normal, int modifier = 0}) {
+  D20Result rollD20({
+    RollMode mode = RollMode.normal,
+    List<Modifier> modifiers = const [],
+  }) {
     final diceCount = mode == RollMode.normal ? 1 : 2;
     return D20Result(
       rolls: [for (var i = 0; i < diceCount; i++) _die(20)],
       mode: mode,
-      modifier: modifier,
+      modifiers: modifiers,
     );
   }
 
@@ -104,10 +127,10 @@ class DiceRoller {
   CheckResult rollCheck({
     required int dc,
     RollMode mode = RollMode.normal,
-    int modifier = 0,
+    List<Modifier> modifiers = const [],
   }) {
     return CheckResult(
-      roll: rollD20(mode: mode, modifier: modifier),
+      roll: rollD20(mode: mode, modifiers: modifiers),
       dc: dc,
     );
   }
