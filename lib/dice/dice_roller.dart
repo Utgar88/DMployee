@@ -59,6 +59,23 @@ class D20Result {
   bool get isNatural1 => kept == 1;
 }
 
+/// A d20 roll compared against a difficulty class (saving throw or ability
+/// check). Per 5e rules only the total counts: a natural 20 or 1 has no
+/// special effect here.
+class CheckResult {
+  CheckResult({required this.roll, required this.dc});
+
+  final D20Result roll;
+
+  /// Difficulty class the total has to meet or beat.
+  final int dc;
+
+  bool get isSuccess => roll.total >= dc;
+
+  /// Distance to the [dc]: positive or zero on success, negative on failure.
+  int get margin => roll.total - dc;
+}
+
 /// Rolls dice. Pass a [Random] to make rolls reproducible (tests, replays).
 class DiceRoller {
   DiceRoller([Random? random]) : _random = random ?? Random.secure();
@@ -80,6 +97,18 @@ class DiceRoller {
       rolls: [for (var i = 0; i < diceCount; i++) _die(20)],
       mode: mode,
       modifier: modifier,
+    );
+  }
+
+  /// Rolls a saving throw or ability check against [dc].
+  CheckResult rollCheck({
+    required int dc,
+    RollMode mode = RollMode.normal,
+    int modifier = 0,
+  }) {
+    return CheckResult(
+      roll: rollD20(mode: mode, modifier: modifier),
+      dc: dc,
     );
   }
 
