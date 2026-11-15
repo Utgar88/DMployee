@@ -1,3 +1,4 @@
+import '../combat/condition.dart';
 import '../dice/dice_roller.dart';
 import 'log_event.dart';
 import 'roll_record.dart';
@@ -48,6 +49,7 @@ class LogFormatter {
           'bei den Todesrettungswürfen (Fehlschläge ${event.failures})',
         ),
       ]),
+      ConditionEvent() => _condition(event),
       CombatantStableEvent() => LogLine([LogSpan('${event.name} ist stabil')]),
       CombatantDiedEvent() => LogLine([
         LogSpan(
@@ -79,6 +81,7 @@ class LogFormatter {
     final attackDetails = [
       'Angriff: ${event.attackName}',
       ...rollDetails(event.attackRoll),
+      ..._modeReasons(event),
     ];
 
     if (!event.hit) {
@@ -130,7 +133,8 @@ class LogFormatter {
       if (event.source != null) 'Quelle: ${event.source}',
       if (event.damageType != null) 'Schadensart: ${event.damageType}',
       if (effect != null)
-        '${effect.label} gegen ${event.damageType}: '
+        '${effect.label}'
+            '${event.damageType == null ? '' : ' gegen ${event.damageType}'}: '
             '${event.amount} → ${event.adjusted}',
       'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
           '(Maximum ${event.maxHp})',
@@ -146,6 +150,53 @@ class LogFormatter {
         '${notes.isEmpty ? '' : ' (${notes.join(', ')})'}',
       ),
     ]);
+  }
+
+  /// `vergiftet` for `poisoned`; the stored name itself if this app version
+  /// does not know the condition.
+  String _conditionWord(String name) =>
+      Condition.fromName(name)?.label.toLowerCase() ?? name;
+
+  LogLine _condition(ConditionEvent event) {
+    final word = _conditionWord(event.condition);
+    final rounds = event.rounds;
+    return LogLine([
+      LogSpan(switch (event.change) {
+        ConditionChange.added =>
+          '${event.name} ist jetzt $word'
+              '${rounds == null ? '' : ' ($rounds ${rounds == 1 ? 'Runde' : 'Runden'})'}',
+        ConditionChange.removed => '${event.name} ist nicht mehr $word',
+        ConditionChange.expired =>
+          '${event.name} ist nicht mehr $word (Dauer abgelaufen)',
+      }),
+    ]);
+  }
+
+  /// Why an attack was rolled with advantage, disadvantage or neither, if
+  /// conditions were involved.
+  List<String> _modeReasons(AttackEvent event) {
+    if (event.conditionEffects.isEmpty) return const [];
+
+    final chosen = event.chosenMode;
+    var advantage = chosen == RollMode.advantage;
+    var disadvantage = chosen == RollMode.disadvantage;
+    final lines = [
+      if (advantage) 'Vorteil: von der Spielleitung gewählt',
+      if (disadvantage) 'Nachteil: von der Spielleitung gewählt',
+    ];
+    for (final effect in event.conditionEffects) {
+      final who = effect.onAttacker ? event.attackerName : event.targetName;
+      lines.add(
+        '${effect.advantage ? 'Vorteil' : 'Nachteil'}: '
+        '$who ist ${_conditionWord(effect.condition)}',
+      );
+      advantage |= effect.advantage;
+      disadvantage |= !effect.advantage;
+    }
+    if (advantage && disadvantage) {
+      lines.add('Vorteil und Nachteil heben sich auf');
+    }
+    return lines;
   }
 
   LogLine _deathSave(DeathSaveEvent event) {

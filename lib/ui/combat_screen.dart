@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../combat/attack.dart';
 import '../combat/combatant.dart';
+import '../combat/condition.dart';
 import '../combat/damage.dart';
 import '../combat/encounter.dart';
 import '../dice/dice_expression.dart';
@@ -76,22 +77,7 @@ class _CombatScreenState extends State<CombatScreen> {
     );
     if (result == null || !mounted) return;
 
-    final outcome = result.outcome;
-    final line = widget.formatter.format(
-      AttackEvent(
-        attackerName: attacker.name,
-        targetName: result.target.name,
-        attackName: attack.name,
-        targetArmorClass: result.target.armorClass,
-        attackRoll: outcome.attackRoll,
-        hit: outcome.hit,
-        critical: outcome.critical,
-        damageType: attack.damageType,
-        damageRoll: outcome.damageRoll,
-        damage: outcome.damage,
-        damageEffect: outcome.damageEffect,
-      ),
-    );
+    final line = widget.formatter.format(result.outcome.event);
     setState(() => _lastAction = line.text);
   }
 
@@ -126,6 +112,23 @@ class _CombatScreenState extends State<CombatScreen> {
           '${effect.label}: ${types.join(', ')}',
     ];
     return groups.isEmpty ? null : groups.join(' · ');
+  }
+
+  Future<void> _addCondition(Combatant combatant) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) =>
+          _ConditionDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _removeCondition(
+    Combatant combatant,
+    Condition condition,
+  ) async {
+    await _encounter.removeCondition(combatant, condition);
+    if (mounted) setState(() {});
   }
 
   Future<void> _deathSave(Combatant combatant) async {
@@ -313,6 +316,37 @@ class _CombatScreenState extends State<CombatScreen> {
                 key: Key('initiative-$index'),
                 style: theme.textTheme.bodySmall,
               ),
+            if (combatant.conditions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final active in combatant.conditions)
+                      InputChip(
+                        key: Key('condition-$index-${active.condition.name}'),
+                        visualDensity: VisualDensity.compact,
+                        label: Text(
+                          active.roundsLeft == null
+                              ? active.condition.label
+                              : '${active.condition.label} '
+                                    '(${active.roundsLeft})',
+                        ),
+                        deleteButtonTooltipMessage: 'Zustand entfernen',
+                        deleteIcon: Icon(
+                          Icons.close,
+                          key: Key(
+                            'remove-condition-$index-${active.condition.name}',
+                          ),
+                          size: 18,
+                        ),
+                        onDeleted: () =>
+                            _removeCondition(combatant, active.condition),
+                      ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -331,6 +365,12 @@ class _CombatScreenState extends State<CombatScreen> {
                   onPressed: () => _addAttack(combatant),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Angriff'),
+                ),
+                TextButton.icon(
+                  key: Key('add-condition-$index'),
+                  onPressed: () => _addCondition(combatant),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Zustand'),
                 ),
                 TextButton.icon(
                   key: Key('traits-$index'),
@@ -723,6 +763,30 @@ class _InitiativeDialogState extends State<_InitiativeDialog> {
   }
 }
 
+String _modeWord(RollMode mode) => switch (mode) {
+  RollMode.advantage => 'Vorteil',
+  RollMode.disadvantage => 'Nachteil',
+  RollMode.normal => 'normal',
+};
+
+/// What [condition] means for attacks made by its bearer.
+String _attackerNote(Condition condition) {
+  final effect = condition.attackerEffect;
+  if (effect != null) return _modeWord(effect);
+  return condition.attackerHint ?? 'keine Wirkung auf den Angriff';
+}
+
+/// What [condition] means for attacks against its bearer.
+String _targetNote(Condition condition) {
+  final effect = condition.targetEffect;
+  final hint = condition.targetHint;
+  if (effect != null) {
+    final word = '${_modeWord(effect)} für den Angreifer';
+    return hint == null ? word : '$word; $hint';
+  }
+  return hint ?? 'keine Wirkung auf den Angriff';
+}
+
 class _AttackResult {
   const _AttackResult(this.target, this.outcome);
 
@@ -751,6 +815,7 @@ class _TargetDialogState extends State<_TargetDialog> {
   final _manualAttack = TextEditingController();
   final _manualDamage = TextEditingController();
   RollMode _mode = RollMode.normal;
+  bool _applyConditions = true;
   String? _errorText;
 
   @override
@@ -769,6 +834,7 @@ class _TargetDialogState extends State<_TargetDialog> {
         mode: _mode,
         manualAttackRoll: int.tryParse(_manualAttack.text),
         manualDamage: int.tryParse(_manualDamage.text),
+        applyConditions: _applyConditions,
       );
       if (mounted) Navigator.pop(context, _AttackResult(target, outcome));
     } on ArgumentError {
@@ -782,6 +848,8 @@ class _TargetDialogState extends State<_TargetDialog> {
   @override
   Widget build(BuildContext context) {
     final combatants = widget.encounter.combatants;
+    final attacker = widget.attacker;
+    final anyConditions = combatants.any((c) => c.conditions.isNotEmpty);
 
     return AlertDialog(
       title: Text('${widget.attacker.name}: ${widget.attack.name}'),
@@ -810,6 +878,25 @@ class _TargetDialogState extends State<_TargetDialog> {
               onSelectionChanged: (selection) =>
                   setState(() => _mode = selection.first),
             ),
+            if (anyConditions)
+              SwitchListTile(
+                key: const Key('attack-conditions'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Zustände berücksichtigen'),
+                subtitle: const Text(
+                  'Vorteil und Nachteil aus Zuständen kommen von selbst dazu',
+                ),
+                value: _applyConditions,
+                onChanged: (value) => setState(() => _applyConditions = value),
+              ),
+            for (final active in attacker.conditions)
+              Text(
+                '${attacker.name} ist '
+                '${active.condition.label.toLowerCase()}: '
+                '${_attackerNote(active.condition)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             const SizedBox(height: 12),
             Text(
               'Am Tisch gewürfelt? (optional)',
@@ -841,8 +928,13 @@ class _TargetDialogState extends State<_TargetDialog> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(combatant.name),
                   subtitle: Text(
-                    'RK ${combatant.armorClass} · '
-                    'TP ${combatant.hp}/${combatant.maxHp}',
+                    [
+                      'RK ${combatant.armorClass} · '
+                          'TP ${combatant.hp}/${combatant.maxHp}',
+                      for (final active in combatant.conditions)
+                        '${active.condition.label}: '
+                            '${_targetNote(active.condition)}',
+                    ].join('\n'),
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _attackTarget(combatant),
@@ -1122,6 +1214,86 @@ class _TraitsDialogState extends State<_TraitsDialog> {
           key: const Key('traits-done'),
           onPressed: () => Navigator.pop(context),
           child: const Text('Fertig'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Gives a combatant a condition: optional duration, then one tap on the
+/// condition.
+class _ConditionDialog extends StatefulWidget {
+  const _ConditionDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_ConditionDialog> createState() => _ConditionDialogState();
+}
+
+class _ConditionDialogState extends State<_ConditionDialog> {
+  final _rounds = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _rounds.dispose();
+    super.dispose();
+  }
+
+  Future<void> _add(Condition condition) async {
+    final rounds = _rounds.text.isEmpty ? null : int.tryParse(_rounds.text);
+    if (_rounds.text.isNotEmpty && (rounds == null || rounds < 1)) {
+      setState(() => _errorText = 'Die Dauer beträgt mindestens 1 Runde.');
+      return;
+    }
+    await widget.encounter.addCondition(
+      widget.combatant,
+      condition,
+      rounds: rounds,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Zustand für ${widget.combatant.name}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _field(
+              'condition-rounds',
+              'Dauer in Runden (optional)',
+              _rounds,
+              helper: 'Leer: bleibt, bis der Zustand entfernt wird',
+              formatters: _digits,
+              number: true,
+            ),
+            if (_errorText != null) _error(context, _errorText!),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final condition in Condition.values)
+                  ActionChip(
+                    key: Key('condition-option-${condition.name}'),
+                    label: Text(condition.label),
+                    onPressed: () => _add(condition),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
         ),
       ],
     );

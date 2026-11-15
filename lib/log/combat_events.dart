@@ -3,6 +3,38 @@ part of 'log_event.dart';
 RollRecord _roll(Object? json) =>
     RollRecord.fromJson((json! as Map).cast<String, Object?>());
 
+/// A condition that changed the attack roll of an [AttackEvent].
+class ConditionEffect {
+  const ConditionEffect({
+    required this.onAttacker,
+    required this.condition,
+    required this.advantage,
+  });
+
+  factory ConditionEffect.fromJson(Map<String, Object?> json) {
+    return ConditionEffect(
+      onAttacker: json['onAttacker']! as bool,
+      condition: json['condition']! as String,
+      advantage: json['advantage']! as bool,
+    );
+  }
+
+  /// True if the attacker has the condition, false if the target has it.
+  final bool onAttacker;
+
+  /// Name of the `Condition` value, e.g. `poisoned`.
+  final String condition;
+
+  /// True for advantage, false for disadvantage.
+  final bool advantage;
+
+  Map<String, Object?> toJson() => {
+    'onAttacker': onAttacker,
+    'condition': condition,
+    'advantage': advantage,
+  };
+}
+
 /// One attack: who attacked whom with what, the attack roll and, on a hit,
 /// the damage roll. Names and armor class are stored as they were at that
 /// moment.
@@ -19,6 +51,8 @@ class AttackEvent extends LogEvent {
     this.damageRoll,
     this.damage = 0,
     this.damageEffect,
+    this.conditionEffects = const [],
+    this._chosenMode,
   });
 
   factory AttackEvent.fromJson(Map<String, Object?> json) {
@@ -34,6 +68,11 @@ class AttackEvent extends LogEvent {
       damageRoll: json['damageRoll'] == null ? null : _roll(json['damageRoll']),
       damage: json['damage']! as int,
       damageEffect: DamageEffect.fromName(json['damageEffect']),
+      conditionEffects: [
+        for (final effect in json['conditionEffects'] as List? ?? const [])
+          ConditionEffect.fromJson((effect as Map).cast<String, Object?>()),
+      ],
+      chosenMode: RollMode.values.asNameMap()[json['chosenMode']],
     );
   }
 
@@ -60,6 +99,15 @@ class AttackEvent extends LogEvent {
   /// [damageType]; null if the rolled damage counted as it was.
   final DamageEffect? damageEffect;
 
+  /// Conditions of attacker and target that gave advantage or disadvantage.
+  final List<ConditionEffect> conditionEffects;
+
+  final RollMode? _chosenMode;
+
+  /// What the game master selected for the attack. Together with
+  /// [conditionEffects] it led to the mode the [attackRoll] was made with.
+  RollMode get chosenMode => _chosenMode ?? attackRoll.mode;
+
   /// Damage as rolled, before [damageEffect]. 0 on a miss.
   int get rolledDamage {
     final total = damageRoll?.total ?? 0;
@@ -82,6 +130,11 @@ class AttackEvent extends LogEvent {
     'damageRoll': ?damageRoll?.toJson(),
     'damage': damage,
     'damageEffect': ?damageEffect?.name,
+    if (conditionEffects.isNotEmpty)
+      'conditionEffects': [
+        for (final effect in conditionEffects) effect.toJson(),
+      ],
+    'chosenMode': chosenMode.name,
   };
 }
 
@@ -355,5 +408,51 @@ class CombatantDiedEvent extends LogEvent {
   Map<String, Object?> toJson() => {
     'name': name,
     'massiveDamage': massiveDamage,
+  };
+}
+
+/// What happened to a condition in a [ConditionEvent].
+enum ConditionChange { added, removed, expired }
+
+/// A combatant got a condition, lost it, or its duration ran out.
+class ConditionEvent extends LogEvent {
+  const ConditionEvent({
+    required this.name,
+    required this.condition,
+    required this.change,
+    this.rounds,
+  });
+
+  factory ConditionEvent.fromJson(Map<String, Object?> json) {
+    return ConditionEvent(
+      name: json['name']! as String,
+      condition: json['condition']! as String,
+      change:
+          ConditionChange.values.asNameMap()[json['change']] ??
+          ConditionChange.added,
+      rounds: json['rounds'] as int?,
+    );
+  }
+
+  static const typeName = 'condition';
+
+  final String name;
+
+  /// Name of the `Condition` value, e.g. `poisoned`.
+  final String condition;
+  final ConditionChange change;
+
+  /// Duration in rounds the condition was given with, if any.
+  final int? rounds;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'condition': condition,
+    'change': change.name,
+    'rounds': ?rounds,
   };
 }

@@ -1,5 +1,6 @@
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/combatant.dart';
+import 'package:dmployee/combat/condition.dart';
 import 'package:dmployee/combat/damage.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/combat/encounter_store.dart';
@@ -794,6 +795,118 @@ void main() {
       await tapKey(tester, 'hp-damage');
 
       expect(textOf(tester, 'stats-1'), 'RK 13 · TP 4/7');
+    });
+  });
+
+  group('Kampf-Bildschirm: Zustände', () {
+    testWidgets('Über "Zustand" lässt sich ein Zustand mit einem Tipp '
+        'vergeben; er steht danach beim Kämpfer', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-condition-1');
+      await tapKey(tester, 'condition-option-poisoned');
+
+      expect(scene.goblin.hasCondition(Condition.poisoned), isTrue);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('condition-1-poisoned')),
+          matching: find.text('Vergiftet'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Mit Dauer vergeben zeigt der Zustand die verbleibenden '
+        'Runden', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-condition-1');
+      await type(tester, 'condition-rounds', '3');
+      await tapKey(tester, 'condition-option-poisoned');
+
+      expect(scene.goblin.conditions.single.roundsLeft, 3);
+      expect(find.text('Vergiftet (3)'), findsOneWidget);
+    });
+
+    testWidgets('Eine Dauer von 0 Runden wird abgelehnt', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-condition-1');
+      await type(tester, 'condition-rounds', '0');
+      await tapKey(tester, 'condition-option-poisoned');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.goblin.conditions, isEmpty);
+    });
+
+    testWidgets('Ein Zustand lässt sich am Kämpfer wieder entfernen', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.encounter.addCondition(scene.goblin, Condition.poisoned);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'remove-condition-1-poisoned');
+
+      expect(scene.goblin.conditions, isEmpty);
+      expect(find.byKey(const Key('condition-1-poisoned')), findsNothing);
+    });
+
+    testWidgets('Ein Angriff berücksichtigt Zustände von selbst: gegen ein '
+        'festgesetztes Ziel wird mit Vorteil gewürfelt', (tester) async {
+      // Two d20 (4 and 15), then the damage die.
+      final scene = Scene([4, 15, 1]);
+      await scene.encounter.addCondition(scene.goblin, Condition.restrained);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.attackRoll.mode, RollMode.advantage);
+      expect(attack.hit, isTrue);
+    });
+
+    testWidgets('Im Angriffsfenster lässt sich abschalten, dass Zustände '
+        'berücksichtigt werden', (tester) async {
+      final scene = Scene([15, 1]);
+      await scene.encounter.addCondition(scene.goblin, Condition.restrained);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await tapKey(tester, 'attack-conditions');
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.attackRoll.mode, RollMode.normal);
+    });
+
+    testWidgets('Ohne Zustände im Kampf fehlt der Schalter im '
+        'Angriffsfenster', (tester) async {
+      await Scene([]).pump(tester);
+
+      await openAttack(tester);
+
+      expect(find.byKey(const Key('attack-conditions')), findsNothing);
+    });
+
+    testWidgets('Das Angriffsfenster zeigt die Zustände des Angreifers und '
+        'des Ziels', (tester) async {
+      final scene = Scene([]);
+      await scene.encounter.addCondition(scene.aria, Condition.poisoned);
+      await scene.encounter.addCondition(scene.goblin, Condition.prone);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+
+      expect(
+        find.textContaining('Aria ist vergiftet: Nachteil'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Liegend'), findsWidgets);
     });
   });
 }

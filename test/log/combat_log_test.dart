@@ -597,4 +597,167 @@ void main() {
       expect(restored.damageEffect, DamageEffect.resistance);
     });
   });
+
+  group('Log-Zeilen für Zustände', () {
+    ConditionEvent event(ConditionChange change, {int? rounds}) =>
+        ConditionEvent(
+          name: 'Oger',
+          condition: 'poisoned',
+          change: change,
+          rounds: rounds,
+        );
+
+    test('Ein vergebener Zustand steht mit Kämpfer und Zustand da', () {
+      expect(
+        formatter.format(event(ConditionChange.added)).text,
+        'Oger ist jetzt vergiftet',
+      );
+    });
+
+    test('Eine Dauer steht in Klammern dahinter', () {
+      expect(
+        formatter.format(event(ConditionChange.added, rounds: 3)).text,
+        'Oger ist jetzt vergiftet (3 Runden)',
+      );
+      expect(
+        formatter.format(event(ConditionChange.added, rounds: 1)).text,
+        'Oger ist jetzt vergiftet (1 Runde)',
+      );
+    });
+
+    test('Entfernen und Ablaufen sind unterscheidbar', () {
+      expect(
+        formatter.format(event(ConditionChange.removed)).text,
+        'Oger ist nicht mehr vergiftet',
+      );
+      expect(
+        formatter.format(event(ConditionChange.expired)).text,
+        'Oger ist nicht mehr vergiftet (Dauer abgelaufen)',
+      );
+    });
+
+    test('Ein Zustand kommt nach dem Speichern und Laden (JSON) unverändert '
+        'zurück', () {
+      final original = event(ConditionChange.added, rounds: 3);
+      final restored =
+          LogEvent.fromJson(original.type, original.toJson()) as ConditionEvent;
+
+      expect(restored.name, 'Oger');
+      expect(restored.condition, 'poisoned');
+      expect(restored.change, ConditionChange.added);
+      expect(restored.rounds, 3);
+    });
+
+    AttackEvent attackWith(
+      List<ConditionEffect> effects, {
+      RollMode chosen = RollMode.normal,
+      required List<int> rolls,
+      required RollMode mode,
+    }) => AttackEvent(
+      attackerName: 'Aria',
+      targetName: 'Oger',
+      attackName: 'Langschwert',
+      targetArmorClass: 11,
+      attackRoll: attackRoll(rolls, mode: mode),
+      hit: false,
+      critical: false,
+      damageType: 'Hieb',
+      conditionEffects: effects,
+      chosenMode: chosen,
+    );
+
+    const poisoned = ConditionEffect(
+      onAttacker: true,
+      condition: 'poisoned',
+      advantage: false,
+    );
+    const restrained = ConditionEffect(
+      onAttacker: false,
+      condition: 'restrained',
+      advantage: true,
+    );
+
+    test('Die Details eines Angriffs nennen den Zustand, der zum Nachteil '
+        'geführt hat', () {
+      final details = detailsOf(
+        attackWith([poisoned], rolls: [4, 2], mode: RollMode.disadvantage),
+      );
+
+      expect(details, contains('Nachteil: Aria ist vergiftet'));
+    });
+
+    test('Die Details nennen den Zustand des Ziels, der zum Vorteil geführt '
+        'hat', () {
+      final details = detailsOf(
+        attackWith([restrained], rolls: [4, 2], mode: RollMode.advantage),
+      );
+
+      expect(details, contains('Vorteil: Oger ist festgesetzt'));
+    });
+
+    test('Heben sich Vorteil und Nachteil auf, steht das in den Details', () {
+      final details = detailsOf(
+        attackWith([poisoned, restrained], rolls: [4], mode: RollMode.normal),
+      );
+
+      expect(
+        details,
+        containsAllInOrder([
+          'Nachteil: Aria ist vergiftet',
+          'Vorteil: Oger ist festgesetzt',
+          'Vorteil und Nachteil heben sich auf',
+        ]),
+      );
+    });
+
+    test('Ein von der Spielleitung gewählter Vorteil steht neben dem '
+        'Zustand in den Details', () {
+      final details = detailsOf(
+        attackWith(
+          [poisoned],
+          chosen: RollMode.advantage,
+          rolls: [4],
+          mode: RollMode.normal,
+        ),
+      );
+
+      expect(
+        details,
+        containsAllInOrder([
+          'Vorteil: von der Spielleitung gewählt',
+          'Nachteil: Aria ist vergiftet',
+          'Vorteil und Nachteil heben sich auf',
+        ]),
+      );
+    });
+
+    test('Die Zustände eines Angriffs bleiben beim Speichern und Laden '
+        '(JSON) erhalten', () {
+      final original = attackWith(
+        [poisoned, restrained],
+        chosen: RollMode.advantage,
+        rolls: [4],
+        mode: RollMode.normal,
+      );
+      final restored =
+          LogEvent.fromJson(original.type, original.toJson()) as AttackEvent;
+
+      expect(restored.chosenMode, RollMode.advantage);
+      expect(restored.conditionEffects, hasLength(2));
+      expect(restored.conditionEffects.first.condition, 'poisoned');
+      expect(restored.conditionEffects.first.onAttacker, isTrue);
+      expect(restored.conditionEffects.last.advantage, isTrue);
+    });
+
+    test('Ein älterer Angriff ohne diese Angaben lässt sich weiter laden', () {
+      final json = missEvent.toJson()
+        ..remove('conditionEffects')
+        ..remove('chosenMode');
+
+      final restored = LogEvent.fromJson(missEvent.type, json) as AttackEvent;
+
+      expect(restored.conditionEffects, isEmpty);
+      expect(restored.chosenMode, RollMode.normal);
+    });
+  });
 }

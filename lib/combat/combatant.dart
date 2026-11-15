@@ -1,4 +1,5 @@
 import 'attack.dart';
+import 'condition.dart';
 import 'damage.dart';
 
 /// A participant in an encounter. Characters and monsters will later supply
@@ -34,6 +35,10 @@ class Combatant {
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
       ..isStable = json['isStable'] as bool? ?? false
       ..isDead = json['isDead'] as bool? ?? false
+      ..conditions.addAll([
+        for (final condition in json['conditions'] as List? ?? const [])
+          ?ActiveCondition.fromJson((condition as Map).cast<String, Object?>()),
+      ])
       ..damageTraits.addAll({
         for (final MapEntry(:key, :value)
             in (json['damageTraits'] as Map? ?? const {}).entries)
@@ -72,14 +77,25 @@ class Combatant {
   final Map<String, DamageEffect> damageTraits = {};
 
   /// How this combatant reacts to damage of [type]; null if normally.
+  ///
+  /// An entry in [damageTraits] decides; without one a petrified combatant
+  /// has resistance against all damage.
   DamageEffect? damageEffectFor(String? type) {
-    if (type == null) return null;
-    final wanted = normalizeDamageType(type);
-    for (final MapEntry(:key, :value) in damageTraits.entries) {
-      if (normalizeDamageType(key) == wanted) return value;
+    if (type != null) {
+      final wanted = normalizeDamageType(type);
+      for (final MapEntry(:key, :value) in damageTraits.entries) {
+        if (normalizeDamageType(key) == wanted) return value;
+      }
     }
-    return null;
+    return hasCondition(Condition.petrified) ? DamageEffect.resistance : null;
   }
+
+  /// Conditions the combatant currently has, each at most once. Change
+  /// them through `Encounter.addCondition` and `removeCondition`.
+  final List<ActiveCondition> conditions = [];
+
+  bool hasCondition(Condition condition) =>
+      conditions.any((active) => active.condition == condition);
 
   /// At 0 hit points.
   bool get isDown => hp <= 0;
@@ -103,6 +119,7 @@ class Combatant {
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+    'conditions': [for (final condition in conditions) condition.toJson()],
     'damageTraits': {
       for (final MapEntry(:key, :value) in damageTraits.entries)
         key: value.name,

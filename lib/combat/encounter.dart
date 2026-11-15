@@ -8,6 +8,7 @@ import '../log/log_repository.dart';
 import '../log/roll_record.dart';
 import 'attack.dart';
 import 'combatant.dart';
+import 'condition.dart';
 import 'damage.dart';
 import 'encounter_store.dart';
 
@@ -19,9 +20,13 @@ class AttackOutcome {
     required this.critical,
     required this.damage,
     required this.targetDown,
+    required this.event,
     this.damageRoll,
     this.damageEffect,
   });
+
+  /// The attack as it was written to the log.
+  final AttackEvent event;
 
   final RollRecord attackRoll;
   final bool hit;
@@ -138,6 +143,68 @@ class Encounter {
     unawaited(_save());
   }
 
+  /// Gives [combatant] a [condition], optionally for a number of [rounds]
+  /// (see [nextTurn]). A condition the combatant already has only gets its
+  /// duration replaced.
+  ///
+  /// [rounds] below 1 throws an [ArgumentError] and changes nothing.
+  Future<void> addCondition(
+    Combatant combatant,
+    Condition condition, {
+    int? rounds,
+  }) async {
+    if (rounds != null && rounds < 1) {
+      throw ArgumentError.value(rounds, 'rounds', 'must be at least 1');
+    }
+    combatant.conditions.removeWhere((c) => c.condition == condition);
+    combatant.conditions.add(ActiveCondition(condition, roundsLeft: rounds));
+    await _log.add(
+      ConditionEvent(
+        name: combatant.name,
+        condition: condition.name,
+        change: ConditionChange.added,
+        rounds: rounds,
+      ),
+    );
+    await _save();
+  }
+
+  /// Takes [condition] from [combatant]; does nothing if they do not have
+  /// it.
+  Future<void> removeCondition(Combatant combatant, Condition condition) async {
+    if (!combatant.hasCondition(condition)) return;
+    combatant.conditions.removeWhere((c) => c.condition == condition);
+    await _log.add(
+      ConditionEvent(
+        name: combatant.name,
+        condition: condition.name,
+        change: ConditionChange.removed,
+      ),
+    );
+    await _save();
+  }
+
+  /// Counts down everything with a duration on [combatant] at the end of
+  /// their turn and returns what ran out.
+  List<LogEvent> _endTurn(Combatant combatant) {
+    final expired = <LogEvent>[];
+    combatant.conditions.removeWhere((active) {
+      final left = active.roundsLeft;
+      if (left == null) return false;
+      active.roundsLeft = left - 1;
+      if (left > 1) return false;
+      expired.add(
+        ConditionEvent(
+          name: combatant.name,
+          condition: active.condition.name,
+          change: ConditionChange.expired,
+        ),
+      );
+      return true;
+    });
+    return expired;
+  }
+
   /// Completes when every change made so far is saved.
   Future<void> flush() => _lastSave;
 
@@ -237,20 +304,29 @@ class Encounter {
   /// Passes the turn to the next combatant who still takes turns: everyone
   /// standing and dying player characters. After the last one a new round
   /// begins.
+  ///
+  /// Durations count down at the end of the turn of the combatant who
+  /// carries them, also when that combatant is skipped.
   Future<void> nextTurn() async {
     if (!isRunning || _combatants.every((c) => !c.takesTurns)) return;
 
     var index = _current == null ? -1 : _combatants.indexOf(_current!);
     var newRound = false;
-    do {
+    final expired = <LogEvent>[if (_current != null) ..._endTurn(_current!)];
+    while (true) {
       index++;
       if (index >= _combatants.length) {
         index = 0;
         newRound = true;
       }
-    } while (!_combatants[index].takesTurns);
+      if (_combatants[index].takesTurns) break;
+      expired.addAll(_endTurn(_combatants[index]));
+    }
 
     _current = _combatants[index];
+    for (final event in expired) {
+      await _log.add(event);
+    }
     if (newRound) {
       _round++;
       await _log.add(RoundEvent(_round));
@@ -276,6 +352,10 @@ class Encounter {
   /// target's resistance, vulnerability or immunity against the attack's
   /// damage type.
   ///
+  /// Conditions of attacker and target give advantage or disadvantage on
+  /// top of the [mode] the game master chose, unless [applyConditions] is
+  /// false. Any advantage together with any disadvantage cancels out.
+  ///
   /// [manualAttackRoll] is the counting d20 rolled at the table,
   /// [manualDamage] the sum of the damage dice without the damage bonus.
   /// Impossible values throw an [ArgumentError] and change nothing.
@@ -286,16 +366,29 @@ class Encounter {
     RollMode mode = RollMode.normal,
     int? manualAttackRoll,
     int? manualDamage,
+    bool applyConditions = true,
   }) async {
+    final conditionEffects = applyConditions
+        ? _conditionEffects(attacker, target)
+        : const <ConditionEffect>[];
+    final hasAdvantage =
+        mode == RollMode.advantage || conditionEffects.any((e) => e.advantage);
+    final hasDisadvantage =
+        mode == RollMode.disadvantage ||
+        conditionEffects.any((e) => !e.advantage);
+    final effectiveMode = hasAdvantage == hasDisadvantage
+        ? RollMode.normal
+        : (hasAdvantage ? RollMode.advantage : RollMode.disadvantage);
+
     final attackModifiers = [Modifier('Angriffsbonus', attack.attackBonus)];
     final attackRoll = manualAttackRoll != null
         ? RollRecord.manualD20(
             manualAttackRoll,
-            mode: mode,
+            mode: effectiveMode,
             modifiers: attackModifiers,
           )
         : RollRecord.fromD20(
-            _roller.rollD20(mode: mode, modifiers: attackModifiers),
+            _roller.rollD20(mode: effectiveMode, modifiers: attackModifiers),
           );
 
     final critical = attackRoll.isNatural20;
@@ -320,27 +413,29 @@ class Encounter {
     final consequences = _applyDamage(target, damage, critical: critical);
     final targetDown = !wasDown && target.isDown;
 
-    await _log.add(
-      AttackEvent(
-        attackerName: attacker.name,
-        targetName: target.name,
-        attackName: attack.name,
-        targetArmorClass: target.armorClass,
-        attackRoll: attackRoll,
-        hit: hit,
-        critical: critical,
-        damageType: attack.damageType,
-        damageRoll: damageRoll,
-        damage: damage,
-        damageEffect: damageEffect,
-      ),
+    final attackEvent = AttackEvent(
+      attackerName: attacker.name,
+      targetName: target.name,
+      attackName: attack.name,
+      targetArmorClass: target.armorClass,
+      attackRoll: attackRoll,
+      hit: hit,
+      critical: critical,
+      damageType: attack.damageType,
+      damageRoll: damageRoll,
+      damage: damage,
+      damageEffect: damageEffect,
+      conditionEffects: conditionEffects,
+      chosenMode: mode,
     );
+    await _log.add(attackEvent);
     for (final event in consequences) {
       await _log.add(event);
     }
     await _save();
 
     return AttackOutcome(
+      event: attackEvent,
       attackRoll: attackRoll,
       hit: hit,
       critical: critical,
@@ -535,6 +630,30 @@ class Encounter {
     if (consequence != null) await _log.add(consequence);
     await _save();
     return event;
+  }
+
+  /// Conditions that give advantage or disadvantage when [attacker]
+  /// attacks [target]: the attacker's first, then the target's.
+  List<ConditionEffect> _conditionEffects(
+    Combatant attacker,
+    Combatant target,
+  ) {
+    return [
+      for (final active in attacker.conditions)
+        if (active.condition.attackerEffect case final effect?)
+          ConditionEffect(
+            onAttacker: true,
+            condition: active.condition.name,
+            advantage: effect == RollMode.advantage,
+          ),
+      for (final active in target.conditions)
+        if (active.condition.targetEffect case final effect?)
+          ConditionEffect(
+            onAttacker: false,
+            condition: active.condition.name,
+            advantage: effect == RollMode.advantage,
+          ),
+    ];
   }
 
   RollRecord _rollDamage(Attack attack, bool critical, int? manualSum) {
