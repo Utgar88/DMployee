@@ -277,6 +277,7 @@ Widget _field(
   TextEditingController controller, {
   List<TextInputFormatter>? formatters,
   bool number = false,
+  String? helper,
 }) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 8),
@@ -285,7 +286,11 @@ Widget _field(
       controller: controller,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       inputFormatters: formatters,
-      decoration: InputDecoration(labelText: label, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helper,
+        isDense: true,
+      ),
     ),
   );
 }
@@ -702,15 +707,17 @@ class _TargetDialogState extends State<_TargetDialog> {
             ),
             _field(
               'manual-attack',
-              'Angriffswurf: d20 ohne Bonus',
+              'Angriffswurf (d20)',
               _manualAttack,
+              helper: 'Gewürfelte Zahl ohne Angriffsbonus',
               formatters: _digits,
               number: true,
             ),
             _field(
               'manual-damage',
-              'Schadenswürfel: Augensumme ohne Bonus',
+              'Schadenswürfel (Summe)',
               _manualDamage,
+              helper: 'Augensumme ohne Schadensbonus',
               formatters: _digits,
               number: true,
             ),
