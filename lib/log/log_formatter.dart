@@ -35,6 +35,10 @@ class LogFormatter {
   LogLine format(LogEvent event) {
     return switch (event) {
       FreeRollEvent() => _freeRoll(event),
+      AttackEvent() => _attack(event),
+      InitiativeEvent() => _initiative(event),
+      RoundEvent() => LogLine([LogSpan('Runde ${event.round} beginnt')]),
+      CombatantDownEvent() => LogLine([LogSpan('${event.name} geht zu Boden')]),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -52,6 +56,50 @@ class LogFormatter {
     ], isFreeRoll: true);
   }
 
+  LogLine _attack(AttackEvent event) {
+    final who = '${event.attackerName} hat ${event.targetName}';
+    final armorClass = 'gegen RK ${event.targetArmorClass}';
+    final attackDetails = [
+      'Angriff: ${event.attackName}',
+      ...rollDetails(event.attackRoll),
+    ];
+
+    if (!event.hit) {
+      return LogLine([
+        LogSpan('$who mit '),
+        LogSpan(
+          '${event.attackRoll.total}',
+          details: [...attackDetails, 'Verfehlt $armorClass'],
+        ),
+        const LogSpan(' verfehlt'),
+      ]);
+    }
+
+    return LogLine([
+      LogSpan('$who für '),
+      LogSpan(
+        '${event.damage}',
+        details: [
+          ...attackDetails,
+          '${event.critical ? 'Kritischer Treffer' : 'Treffer'} $armorClass',
+          'Schaden (${event.damageType}):',
+          ...rollDetails(event.damageRoll!),
+        ],
+      ),
+      LogSpan(' Schaden ${event.critical ? 'kritisch ' : ''}getroffen'),
+    ]);
+  }
+
+  LogLine _initiative(InitiativeEvent event) {
+    return LogLine([
+      const LogSpan('Initiative: '),
+      for (final (index, entry) in event.entries.indexed) ...[
+        LogSpan('${index == 0 ? '' : ', '}${entry.name} '),
+        LogSpan('${entry.roll.total}', details: rollDetails(entry.roll)),
+      ],
+    ]);
+  }
+
   /// Breakdown of a single roll: dice, each modifier with its source, total.
   List<String> rollDetails(RollRecord roll) {
     return [
@@ -64,6 +112,14 @@ class LogFormatter {
   }
 
   String _diceLine(RollRecord roll) {
+    if (roll.manual) {
+      final mode = switch (roll.mode) {
+        RollMode.normal => '',
+        RollMode.advantage => ' mit Vorteil',
+        RollMode.disadvantage => ' mit Nachteil',
+      };
+      return '${roll.dice}$mode von Hand: ${roll.kept}';
+    }
     switch (roll.mode) {
       case RollMode.advantage:
         return '${roll.dice} mit Vorteil: ${roll.rolls.join(' | ')} '

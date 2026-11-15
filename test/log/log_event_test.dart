@@ -70,6 +70,63 @@ void main() {
     });
   });
 
+  group('Von Hand eingetragene Würfe (RollRecord)', () {
+    test('Ein eingetragener d20 ist als von Hand eingetragen markiert', () {
+      final record = RollRecord.manualD20(
+        15,
+        modifiers: [Modifier('Angriffsbonus', 5)],
+      );
+
+      expect(record.manual, isTrue);
+      expect(record.rolls, [15]);
+      expect(record.total, 20);
+    });
+
+    test('Eine eingetragene Augensumme zählt als Ergebnis aller Würfel', () {
+      final record = RollRecord.manualDice(
+        count: 2,
+        sides: 6,
+        sum: 9,
+        modifiers: [Modifier('Schadensbonus', 3)],
+      );
+
+      expect(record.manual, isTrue);
+      expect(record.dice, '2d6');
+      expect(record.kept, 9);
+      expect(record.total, 12);
+    });
+
+    test('Gewürfelte Würfe sind nicht als von Hand eingetragen markiert', () {
+      final record = RollRecord.fromD20(
+        DiceRoller(FixedRandom([10])).rollD20(),
+      );
+
+      expect(record.manual, isFalse);
+    });
+
+    test('Die Markierung bleibt beim Speichern und Laden erhalten', () {
+      final loaded = RollRecord.fromJson(RollRecord.manualD20(15).toJson());
+
+      expect(loaded.manual, isTrue);
+    });
+
+    test('Ein eingetragener d20 außerhalb von 1 bis 20 wird abgelehnt', () {
+      expect(() => RollRecord.manualD20(0), throwsArgumentError);
+      expect(() => RollRecord.manualD20(21), throwsArgumentError);
+    });
+
+    test('Eine Augensumme außerhalb des Möglichen wird abgelehnt', () {
+      expect(
+        () => RollRecord.manualDice(count: 2, sides: 6, sum: 1),
+        throwsArgumentError,
+      );
+      expect(
+        () => RollRecord.manualDice(count: 2, sides: 6, sum: 13),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('Log-Ereignis: freier Wurf (FreeRollEvent)', () {
     test('Ein freier Wurf ist als solcher gekennzeichnet', () {
       final event = FreeRollEvent(

@@ -1,13 +1,16 @@
 import 'roll_record.dart';
 
+part 'combat_events.dart';
+
 /// Something that happened and is kept in the log.
 ///
 /// Events store facts, never finished sentences. The text shown in the log
 /// is produced from these facts by the LogFormatter, so the wording can
 /// change later without touching stored entries.
 ///
-/// To add a new kind of event: add a subclass, give it a unique [type] and
-/// register it in [LogEvent.fromJson].
+/// To add a new kind of event: add a subclass in this library (this file or
+/// one of its parts), give it a unique [type] and register it in
+/// [LogEvent.fromJson].
 sealed class LogEvent {
   const LogEvent();
 
@@ -16,6 +19,10 @@ sealed class LogEvent {
   factory LogEvent.fromJson(String type, Map<String, Object?> json) {
     return switch (type) {
       FreeRollEvent.typeName => FreeRollEvent.fromJson(json),
+      AttackEvent.typeName => AttackEvent.fromJson(json),
+      InitiativeEvent.typeName => InitiativeEvent.fromJson(json),
+      RoundEvent.typeName => RoundEvent.fromJson(json),
+      CombatantDownEvent.typeName => CombatantDownEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }
