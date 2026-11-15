@@ -31,6 +31,15 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Logik von UI trennen.
 - Nach Änderungen `flutter analyze` und `flutter test` ausführen.
 
+## Log (verbindlich für alle Module)
+
+- Alles, was im Spiel passiert, wird über `LogRepository.add` als `LogEvent` protokolliert (`lib/log/`).
+- Ereignisse speichern Fakten, keine Sätze. Texte und Details erzeugt ausschließlich der `LogFormatter`.
+- Würfe immer als `RollRecord` ablegen, Modifier immer mit Herkunft (`Modifier('Stärke', 5)`).
+- Neuer Ereignistyp: Unterklasse von `LogEvent`, Eintrag in `LogEvent.fromJson`, Fall im `LogFormatter`, Tests in `test/log/`.
+- Tests nutzen `InMemoryLogRepository`; SQLite-Tests laufen über `sqflite_common_ffi`.
+- Emulator: `MAUI_Emulator_API_36` läuft nur mit Software-Rendering stabil (`hw.gpu.mode=software` in der config.ini).
+
 ## Git
 
 - Repo: `git@github.com:Utgar88/DMployee.git`, Branch `main`, Push per SSH.
