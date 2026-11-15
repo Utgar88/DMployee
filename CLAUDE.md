@@ -31,6 +31,13 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Logik von UI trennen.
 - Nach Änderungen `flutter analyze` und `flutter test` ausführen.
 
+## Git
+
+- Repo: `git@github.com:Utgar88/DMployee.git`, Branch `main`, Push per SSH.
+- Dirk hat dauerhaft freigegeben: nach jedem grünen Schritt (`flutter analyze` und `flutter test` ohne Befund) eigenständig committen und pushen, ohne Rückfrage.
+- Nie mit roten Tests committen. Kein Force-Push und kein Umschreiben der Historie ohne Rückfrage.
+- Commit-Nachrichten auf Deutsch, kurz, mit dem Was und Warum.
+
 ## Testgetriebene Entwicklung (verbindlich)
 
 - Reihenfolge: erst der Test (rot), dann die Implementierung (grün), dann aufräumen. Kein Produktivcode ohne vorher geschriebenen, fehlschlagenden Test.
