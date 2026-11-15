@@ -8,9 +8,12 @@ import 'log_screen.dart';
 
 /// Root screen: switches between the app's areas with a bottom bar.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.log});
+  const HomeScreen({super.key, required this.log, this.encounter});
 
   final LogRepository log;
+
+  /// The combat loaded at app start; a new empty one if omitted.
+  final Encounter? encounter;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -20,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _logTab = 2;
 
   /// The running encounter. Kept here so it survives switching tabs.
-  late final _encounter = Encounter(log: widget.log);
+  late final _encounter = widget.encounter ?? Encounter(log: widget.log);
 
   int _index = 0;
 

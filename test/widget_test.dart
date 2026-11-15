@@ -1,3 +1,4 @@
+import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/log/log_repository.dart';
 import 'package:dmployee/main.dart';
 import 'package:dmployee/ui/combat_screen.dart';
@@ -34,5 +35,19 @@ void main() {
 
     expect(find.byType(CombatScreen), findsOneWidget);
     expect(find.text('Noch keine Kämpfer'), findsOneWidget);
+  });
+
+  testWidgets('Ein beim Start geladener Kampf erscheint auf dem '
+      'Kampf-Bildschirm', (tester) async {
+    final log = InMemoryLogRepository();
+    final encounter = Encounter(log: log)
+      ..add(name: 'Aria', armorClass: 16, maxHp: 20);
+    await tester.pumpWidget(DMployeeApp(log: log, encounter: encounter));
+
+    await tester.tap(find.byKey(const Key('nav-combat')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aria'), findsOneWidget);
+    expect(find.text('Noch keine Kämpfer'), findsNothing);
   });
 }

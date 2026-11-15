@@ -44,7 +44,9 @@ class _CombatScreenState extends State<CombatScreen> {
       context: context,
       builder: (context) => _AttackDialog(combatant: combatant),
     );
-    if (attack != null) setState(() => combatant.attacks.add(attack));
+    if (attack != null) {
+      setState(() => _encounter.addAttack(combatant, attack));
+    }
   }
 
   Future<void> _rollInitiative() async {

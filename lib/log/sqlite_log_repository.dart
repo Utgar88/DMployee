@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import '../storage/app_database.dart';
 import 'log_event.dart';
 import 'log_repository.dart';
 
@@ -10,9 +11,12 @@ import 'log_repository.dart';
 /// Each entry keeps its event as a type name plus a JSON payload, so new
 /// event types need no change to the database structure.
 class SqliteLogRepository implements LogRepository {
-  SqliteLogRepository._(this._database, this._now);
+  /// Uses an already opened app database (see [openAppDatabase]).
+  SqliteLogRepository(this._database, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
-  /// Opens (and if needed creates) the log database at [path].
+  /// Opens (and if needed creates) the app database at [path] and returns
+  /// its log.
   ///
   /// [factory] defaults to the device database; tests pass an FFI factory.
   static Future<SqliteLogRepository> open({
@@ -20,40 +24,8 @@ class SqliteLogRepository implements LogRepository {
     DatabaseFactory? factory,
     DateTime Function()? now,
   }) async {
-    final database = await (factory ?? databaseFactory).openDatabase(
-      path,
-      options: OpenDatabaseOptions(
-        version: 1,
-        // Always a fresh connection: tests rely on separate in-memory
-        // databases.
-        singleInstance: false,
-        onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
-        onCreate: _create,
-      ),
-    );
-    return SqliteLogRepository._(database, now ?? DateTime.now);
-  }
-
-  static Future<void> _create(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        started_at INTEGER NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE log_entries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id INTEGER NOT NULL REFERENCES sessions (id),
-        timestamp INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        payload TEXT NOT NULL
-      )
-    ''');
-    await db.execute(
-      'CREATE INDEX log_entries_session ON log_entries (session_id, id)',
-    );
+    final database = await openAppDatabase(path: path, factory: factory);
+    return SqliteLogRepository(database, now: now);
   }
 
   final Database _database;

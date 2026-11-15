@@ -46,6 +46,11 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Es gelten die 5e-Standardregeln. Sonderregeln und ein wählbares Regelset kommen später; keine Hausregeln einbauen.
 - Jeder Wurf muss auch von Hand eintragbar sein (am Tisch gewürfelt) und wird als `RollRecord` mit `manual: true` protokolliert.
 - Werte, die im Kampf wiederholt gebraucht werden, werden beim Kämpfer hinterlegt, nicht pro Aktion neu abgefragt.
+- Der Kampfstand wird nach jeder Änderung gespeichert (`EncounterStore`, Tabelle `encounter_state`). Änderungen am Kampf deshalb immer über Methoden von `Encounter` machen, nie direkt an `Combatant` aus dem Bildschirm heraus; neue Felder in `toJson`/`fromJson` aufnehmen.
+
+## Datenbank
+
+- Eine gemeinsame Datenbank `dmployee.db`, geöffnet über `openAppDatabase` (`lib/storage/app_database.dart`). Strukturänderung: Version erhöhen, Schritt in `_upgrade` ergänzen, `_create` auf denselben Endstand bringen, Test in `test/storage/app_database_test.dart`. Vorhandene Daten dürfen dabei nicht verloren gehen.
 
 ## Git
 

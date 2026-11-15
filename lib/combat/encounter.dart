@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
@@ -6,6 +8,7 @@ import '../log/log_repository.dart';
 import '../log/roll_record.dart';
 import 'attack.dart';
 import 'combatant.dart';
+import 'encounter_store.dart';
 
 /// Result of one attack.
 class AttackOutcome {
@@ -33,13 +36,32 @@ class AttackOutcome {
 /// A combat: combatants, initiative order, rounds and attacks following the
 /// D&D 5e basic rules. Everything that happens is written to the log.
 ///
-/// The state lives in memory only and is lost when the app closes.
+/// With a [EncounterStore] every change is saved, so the combat survives
+/// closing the app; [Encounter.load] brings it back. Without a store the
+/// state lives in memory only.
 class Encounter {
-  Encounter({required this._log, DiceRoller? roller})
+  Encounter({required this._log, DiceRoller? roller, this._store})
     : _roller = roller ?? DiceRoller();
+
+  /// The combat as it was last saved in [store]. Starts empty if nothing
+  /// was saved yet or the saved state cannot be read.
+  static Future<Encounter> load({
+    required LogRepository log,
+    required EncounterStore store,
+    DiceRoller? roller,
+  }) async {
+    final encounter = Encounter(log: log, store: store, roller: roller);
+    final state = await store.load();
+    if (state != null) encounter._restore(state);
+    return encounter;
+  }
 
   final LogRepository _log;
   final DiceRoller _roller;
+  final EncounterStore? _store;
+
+  /// The most recent save; later saves are queued behind it.
+  Future<void> _lastSave = Future.value();
   final _combatants = <Combatant>[];
 
   int _round = 0;
@@ -72,12 +94,70 @@ class Encounter {
       attacks: attacks,
     );
     _combatants.add(combatant);
+    unawaited(_save());
     return combatant;
   }
 
   void remove(Combatant combatant) {
     _combatants.remove(combatant);
     if (_current == combatant) _current = null;
+    unawaited(_save());
+  }
+
+  /// Stores a further [attack] on [combatant].
+  void addAttack(Combatant combatant, Attack attack) {
+    combatant.attacks.add(attack);
+    unawaited(_save());
+  }
+
+  /// Completes when every change made so far is saved.
+  Future<void> flush() => _lastSave;
+
+  /// Saves the current state. Saves run one after the other, so the last
+  /// change always wins.
+  Future<void> _save() {
+    final store = _store;
+    if (store == null) return _lastSave;
+    final state = _toJson();
+    // A failed earlier save must not block this one.
+    return _lastSave = _lastSave
+        .catchError((Object _) {})
+        .then((_) => store.save(state));
+  }
+
+  Map<String, Object?> _toJson() => {
+    'round': _round,
+    'current': _current == null ? null : _combatants.indexOf(_current!),
+    'combatants': [for (final combatant in _combatants) combatant.toJson()],
+  };
+
+  /// Takes over a state written by [_toJson]. A state that cannot be read
+  /// is ignored as a whole, so the app still starts.
+  void _restore(Map<String, Object?> state) {
+    final List<Combatant> combatants;
+    final int round;
+    final int? current;
+    try {
+      combatants = [
+        for (final combatant in state['combatants']! as List)
+          Combatant.fromJson((combatant as Map).cast<String, Object?>()),
+      ];
+      round = state['round']! as int;
+      current = state['current'] as int?;
+      // ignore: avoid_catching_errors, wrong types in a damaged state.
+    } on Error {
+      return;
+    } on FormatException {
+      return;
+    }
+
+    _combatants
+      ..clear()
+      ..addAll(combatants);
+    _round = round;
+    _current = current != null && current >= 0 && current < combatants.length
+        ? combatants[current]
+        : null;
   }
 
   /// Rolls initiative for everyone and starts round 1.
@@ -123,6 +203,7 @@ class Encounter {
       ]),
     );
     await _log.add(RoundEvent(_round));
+    await _save();
   }
 
   /// Passes the turn to the next combatant who is still standing. After the
@@ -145,6 +226,7 @@ class Encounter {
       _round++;
       await _log.add(RoundEvent(_round));
     }
+    await _save();
   }
 
   /// Ends the combat: round and initiative are reset, hit points stay.
@@ -154,6 +236,7 @@ class Encounter {
     for (final combatant in _combatants) {
       combatant.initiative = null;
     }
+    unawaited(_save());
   }
 
   /// [attacker] attacks [target] with [attack].
@@ -218,6 +301,7 @@ class Encounter {
     if (targetDown) {
       await _log.add(CombatantDownEvent(target.name));
     }
+    await _save();
 
     return AttackOutcome(
       attackRoll: attackRoll,
@@ -276,6 +360,7 @@ class Encounter {
     if (!wasDown && target.isDown) {
       await _log.add(CombatantDownEvent(target.name));
     }
+    await _save();
     return event;
   }
 

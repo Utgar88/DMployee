@@ -1,6 +1,7 @@
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/combatant.dart';
 import 'package:dmployee/combat/encounter.dart';
+import 'package:dmployee/combat/encounter_store.dart';
 import 'package:dmployee/dice/dice_expression.dart';
 import 'package:dmployee/dice/dice_roller.dart';
 import 'package:dmployee/log/log_event.dart';
@@ -23,7 +24,11 @@ final longsword = Attack(
 /// Initiative +1) are already in the encounter.
 class Scene {
   Scene(List<int> faces, {bool prepared = true}) {
-    encounter = Encounter(log: log, roller: DiceRoller(FixedRandom(faces)));
+    encounter = Encounter(
+      log: log,
+      store: store,
+      roller: DiceRoller(FixedRandom(faces)),
+    );
     if (prepared) {
       aria = encounter.add(
         name: 'Aria',
@@ -42,6 +47,7 @@ class Scene {
   }
 
   final log = InMemoryLogRepository();
+  final store = InMemoryEncounterStore();
   late final Encounter encounter;
   late final Combatant aria;
   late final Combatant goblin;
@@ -55,6 +61,12 @@ class Scene {
 
   Future<List<LogEvent>> events() async =>
       (await log.entries()).reversed.map((entry) => entry.event).toList();
+
+  /// The combat as the app finds it after a restart.
+  Future<Encounter> reopen() async {
+    await encounter.flush();
+    return Encounter.load(log: log, store: store);
+  }
 }
 
 Future<void> tapKey(WidgetTester tester, String key) async {
@@ -476,6 +488,64 @@ void main() {
       await tapKey(tester, 'hp-damage');
 
       expect(textOf(tester, 'stats-1'), 'RK 13 · TP 5/7');
+    });
+  });
+
+  group('Kampf-Bildschirm: Kampfstand speichern', () {
+    testWidgets('Ein über das Fenster angelegter Kämpfer ist nach dem '
+        'Neustart noch da', (tester) async {
+      final scene = Scene([], prepared: false);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-combatant');
+      await type(tester, 'combatant-name', 'Aria');
+      await type(tester, 'combatant-ac', '16');
+      await type(tester, 'combatant-hp', '20');
+      await tapKey(tester, 'combatant-save');
+
+      final restored = await scene.reopen();
+      expect(restored.combatants.single.name, 'Aria');
+    });
+
+    testWidgets('Ein über das Fenster hinterlegter Angriff ist nach dem '
+        'Neustart noch da', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-attack-1');
+      await type(tester, 'attack-name', 'Krummsäbel');
+      await type(tester, 'attack-bonus', '4');
+      await type(tester, 'attack-damage', '1d6+2');
+      await tapKey(tester, 'attack-save');
+
+      final restored = await scene.reopen();
+      expect(restored.combatants.last.attacks.single.name, 'Krummsäbel');
+    });
+
+    testWidgets('Über "TP ändern" eingetragener Schaden ist nach dem '
+        'Neustart noch da', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '3');
+      await tapKey(tester, 'hp-damage');
+
+      final restored = await scene.reopen();
+      expect(restored.combatants.last.hp, 4);
+    });
+
+    testWidgets('Ein laufender Kampf ist nach dem Neustart noch in '
+        'derselben Runde', (tester) async {
+      final scene = Scene([10, 5]);
+      await scene.pump(tester);
+      await startCombat(tester);
+      await tapKey(tester, 'next-turn');
+      await tapKey(tester, 'next-turn');
+
+      final restored = await scene.reopen();
+      expect(restored.round, 2);
+      expect(restored.current!.name, 'Aria');
     });
   });
 }
