@@ -38,7 +38,7 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Würfe immer als `RollRecord` ablegen, Modifier immer mit Herkunft (`Modifier('Stärke', 5)`).
 - Neuer Ereignistyp: Unterklasse von `LogEvent` in der Bibliothek `lib/log/log_event.dart` (Datei selbst oder `part` wie `lib/log/combat_events.dart`, da `LogEvent` versiegelt ist), Eintrag in `LogEvent.fromJson`, Fall im `LogFormatter`, Tests in `test/log/`.
 - Tests nutzen `InMemoryLogRepository`; SQLite-Tests laufen über `sqflite_common_ffi`.
-- Emulator: `MAUI_Emulator_API_36` läuft nur mit Software-Rendering stabil (`hw.gpu.mode=software` in der config.ini).
+- Emulator: `MAUI_Emulator_API_36` stürzt mit Vulkan ab. Dauerhaft behoben über `~/.android/advancedFeatures.ini` (`Vulkan = off`); diese Datei nicht entfernen.
 
 ## Kampf-Engine
 
