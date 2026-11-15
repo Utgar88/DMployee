@@ -27,7 +27,7 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 ## Arbeitsweise
 
 - Claude führt die Entwicklung, Dirk testet und gibt Feedback.
-- Einstieg: Würfler (Kern-Logik zuerst ohne UI), dann Kampf-Engine. Danach Charaktere, Compendium, Session-View.
+- Reihenfolge: Würfler, Log, Kampf-Engine (alle begonnen), danach Charaktere, Compendium, Session-View. Aktueller Stand und nächste Schritte stehen im Vault in `02 Projekte/DMployee.md`.
 - Logik von UI trennen.
 - Nach Änderungen `flutter analyze` und `flutter test` ausführen.
 
@@ -36,9 +36,16 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Alles, was im Spiel passiert, wird über `LogRepository.add` als `LogEvent` protokolliert (`lib/log/`).
 - Ereignisse speichern Fakten, keine Sätze. Texte und Details erzeugt ausschließlich der `LogFormatter`.
 - Würfe immer als `RollRecord` ablegen, Modifier immer mit Herkunft (`Modifier('Stärke', 5)`).
-- Neuer Ereignistyp: Unterklasse von `LogEvent`, Eintrag in `LogEvent.fromJson`, Fall im `LogFormatter`, Tests in `test/log/`.
+- Neuer Ereignistyp: Unterklasse von `LogEvent` in der Bibliothek `lib/log/log_event.dart` (Datei selbst oder `part` wie `lib/log/combat_events.dart`, da `LogEvent` versiegelt ist), Eintrag in `LogEvent.fromJson`, Fall im `LogFormatter`, Tests in `test/log/`.
 - Tests nutzen `InMemoryLogRepository`; SQLite-Tests laufen über `sqflite_common_ffi`.
 - Emulator: `MAUI_Emulator_API_36` läuft nur mit Software-Rendering stabil (`hw.gpu.mode=software` in der config.ini).
+
+## Kampf-Engine
+
+- Regeln liegen in `lib/combat/encounter.dart` (`Encounter`), nicht im Bildschirm. `Encounter` schreibt selbst in den Log.
+- Es gelten die 5e-Standardregeln. Sonderregeln und ein wählbares Regelset kommen später; keine Hausregeln einbauen.
+- Jeder Wurf muss auch von Hand eintragbar sein (am Tisch gewürfelt) und wird als `RollRecord` mit `manual: true` protokolliert.
+- Werte, die im Kampf wiederholt gebraucht werden, werden beim Kämpfer hinterlegt, nicht pro Aktion neu abgefragt.
 
 ## Git
 
