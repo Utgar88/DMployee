@@ -101,9 +101,15 @@ class LogFormatter {
           '${event.critical ? 'Kritischer Treffer' : 'Treffer'} $armorClass',
           'Schaden (${event.damageType}):',
           ...rollDetails(event.damageRoll!),
+          if (event.damageEffect case final effect?)
+            '${effect.label} gegen ${event.damageType}: '
+                '${event.rolledDamage} → ${event.damage}',
         ],
       ),
-      LogSpan(' Schaden ${event.critical ? 'kritisch ' : ''}getroffen'),
+      LogSpan(
+        ' Schaden ${event.critical ? 'kritisch ' : ''}getroffen'
+        '${event.damageEffect == null ? '' : ' (${event.damageEffect!.label})'}',
+      ),
     ]);
   }
 
@@ -118,18 +124,27 @@ class LogFormatter {
   }
 
   LogLine _hpChange(HpChangeEvent event) {
-    final source = event.source == null ? '' : ' (${event.source})';
+    final effect = event.damageEffect;
+    final notes = [?event.source, ?effect?.label];
     final details = [
       if (event.source != null) 'Quelle: ${event.source}',
+      if (event.damageType != null) 'Schadensart: ${event.damageType}',
+      if (effect != null)
+        '${effect.label} gegen ${event.damageType}: '
+            '${event.amount} → ${event.adjusted}',
       'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
           '(Maximum ${event.maxHp})',
-      if (event.effective != event.amount) 'Davon wirksam: ${event.effective}',
+      if (event.effective != event.adjusted)
+        'Davon wirksam: ${event.effective}',
     ];
 
     return LogLine([
       LogSpan('${event.name} ${event.healing ? 'wird um' : 'erleidet'} '),
-      LogSpan('${event.amount}', details: details),
-      LogSpan('${event.healing ? ' TP geheilt' : ' Schaden'}$source'),
+      LogSpan('${event.adjusted}', details: details),
+      LogSpan(
+        '${event.healing ? ' TP geheilt' : ' Schaden'}'
+        '${notes.isEmpty ? '' : ' (${notes.join(', ')})'}',
+      ),
     ]);
   }
 

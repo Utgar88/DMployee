@@ -1,4 +1,5 @@
 import 'attack.dart';
+import 'damage.dart';
 
 /// A participant in an encounter. Characters and monsters will later supply
 /// exactly these values.
@@ -32,7 +33,12 @@ class Combatant {
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
       ..isStable = json['isStable'] as bool? ?? false
-      ..isDead = json['isDead'] as bool? ?? false;
+      ..isDead = json['isDead'] as bool? ?? false
+      ..damageTraits.addAll({
+        for (final MapEntry(:key, :value)
+            in (json['damageTraits'] as Map? ?? const {}).entries)
+          key as String: ?DamageEffect.fromName(value),
+      });
   }
 
   String name;
@@ -60,6 +66,21 @@ class Combatant {
   bool isStable = false;
   bool isDead = false;
 
+  /// Resistance, vulnerability or immunity per damage type, e.g.
+  /// `{'Feuer': DamageEffect.resistance}`. Change it through
+  /// `Encounter.setDamageTrait`.
+  final Map<String, DamageEffect> damageTraits = {};
+
+  /// How this combatant reacts to damage of [type]; null if normally.
+  DamageEffect? damageEffectFor(String? type) {
+    if (type == null) return null;
+    final wanted = normalizeDamageType(type);
+    for (final MapEntry(:key, :value) in damageTraits.entries) {
+      if (normalizeDamageType(key) == wanted) return value;
+    }
+    return null;
+  }
+
   /// At 0 hit points.
   bool get isDown => hp <= 0;
 
@@ -82,6 +103,10 @@ class Combatant {
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+    'damageTraits': {
+      for (final MapEntry(:key, :value) in damageTraits.entries)
+        key: value.name,
+    },
     'initiative': initiative,
     'attacks': [for (final attack in attacks) attack.toJson()],
   };

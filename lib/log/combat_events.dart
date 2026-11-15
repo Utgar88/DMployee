@@ -18,6 +18,7 @@ class AttackEvent extends LogEvent {
     required this.damageType,
     this.damageRoll,
     this.damage = 0,
+    this.damageEffect,
   });
 
   factory AttackEvent.fromJson(Map<String, Object?> json) {
@@ -32,6 +33,7 @@ class AttackEvent extends LogEvent {
       damageType: json['damageType']! as String,
       damageRoll: json['damageRoll'] == null ? null : _roll(json['damageRoll']),
       damage: json['damage']! as int,
+      damageEffect: DamageEffect.fromName(json['damageEffect']),
     );
   }
 
@@ -51,8 +53,18 @@ class AttackEvent extends LogEvent {
   /// Null when the attack missed.
   final RollRecord? damageRoll;
 
-  /// Damage dealt, never negative.
+  /// Damage dealt after [damageEffect], never negative.
   final int damage;
+
+  /// Resistance, vulnerability or immunity of the target against
+  /// [damageType]; null if the rolled damage counted as it was.
+  final DamageEffect? damageEffect;
+
+  /// Damage as rolled, before [damageEffect]. 0 on a miss.
+  int get rolledDamage {
+    final total = damageRoll?.total ?? 0;
+    return total < 0 ? 0 : total;
+  }
 
   @override
   String get type => typeName;
@@ -69,6 +81,7 @@ class AttackEvent extends LogEvent {
     'damageType': damageType,
     'damageRoll': ?damageRoll?.toJson(),
     'damage': damage,
+    'damageEffect': ?damageEffect?.name,
   };
 }
 
@@ -157,6 +170,8 @@ class HpChangeEvent extends LogEvent {
     required this.hpAfter,
     required this.maxHp,
     this.source,
+    this.damageType,
+    this.damageEffect,
   });
 
   factory HpChangeEvent.fromJson(Map<String, Object?> json) {
@@ -168,6 +183,8 @@ class HpChangeEvent extends LogEvent {
       hpAfter: json['hpAfter']! as int,
       maxHp: json['maxHp']! as int,
       source: json['source'] as String?,
+      damageType: json['damageType'] as String?,
+      damageEffect: DamageEffect.fromName(json['damageEffect']),
     );
   }
 
@@ -178,6 +195,15 @@ class HpChangeEvent extends LogEvent {
   /// Amount as entered, always positive. The part that took effect is the
   /// difference between [hpBefore] and [hpAfter].
   final int amount;
+
+  /// Damage type, if one was given; always null for healing.
+  final String? damageType;
+
+  /// Resistance, vulnerability or immunity that changed the [amount].
+  final DamageEffect? damageEffect;
+
+  /// [amount] after [damageEffect].
+  int get adjusted => adjustDamage(amount, damageEffect);
 
   /// True for healing, false for damage.
   final bool healing;
@@ -203,6 +229,8 @@ class HpChangeEvent extends LogEvent {
     'hpAfter': hpAfter,
     'maxHp': maxHp,
     'source': ?source,
+    'damageType': ?damageType,
+    'damageEffect': ?damageEffect?.name,
   };
 }
 

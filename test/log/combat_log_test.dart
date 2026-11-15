@@ -1,3 +1,4 @@
+import 'package:dmployee/combat/damage.dart';
 import 'package:dmployee/dice/dice_roller.dart';
 import 'package:dmployee/dice/modifier.dart';
 import 'package:dmployee/log/log_event.dart';
@@ -471,6 +472,129 @@ void main() {
       ) as CombatantDiedEvent;
       expect(died.name, 'Aria');
       expect(died.massiveDamage, isTrue);
+    });
+  });
+
+  group('Log-Zeilen für Resistenz, Anfälligkeit und Immunität', () {
+    AttackEvent hitWith(DamageEffect effect, int damage) => AttackEvent(
+      attackerName: 'Aria',
+      targetName: 'Oger',
+      attackName: 'Langschwert',
+      targetArmorClass: 11,
+      attackRoll: attackRoll([15]),
+      hit: true,
+      critical: false,
+      damageType: 'Hieb',
+      damageRoll: RollRecord(
+        count: 1,
+        sides: 8,
+        rolls: [6],
+        modifiers: [Modifier('Schadensbonus', 3)],
+      ),
+      damage: damage,
+      damageEffect: effect,
+    );
+
+    test('Die Zeile nennt den wirksamen Schaden und die Resistenz', () {
+      expect(
+        formatter.format(hitWith(DamageEffect.resistance, 4)).text,
+        'Aria hat Oger für 4 Schaden getroffen (Resistenz)',
+      );
+    });
+
+    test('Anfälligkeit und Immunität stehen ebenso in der Zeile', () {
+      expect(
+        formatter.format(hitWith(DamageEffect.vulnerability, 18)).text,
+        'Aria hat Oger für 18 Schaden getroffen (Anfälligkeit)',
+      );
+      expect(
+        formatter.format(hitWith(DamageEffect.immunity, 0)).text,
+        'Aria hat Oger für 0 Schaden getroffen (Immunität)',
+      );
+    });
+
+    test('Die Details zeigen, wie aus dem gewürfelten der wirksame Schaden '
+        'wird', () {
+      expect(
+        detailsOf(hitWith(DamageEffect.resistance, 4)).last,
+        'Resistenz gegen Hieb: 9 → 4',
+      );
+      expect(
+        detailsOf(hitWith(DamageEffect.vulnerability, 18)).last,
+        'Anfälligkeit gegen Hieb: 9 → 18',
+      );
+      expect(
+        detailsOf(hitWith(DamageEffect.immunity, 0)).last,
+        'Immunität gegen Hieb: 9 → 0',
+      );
+    });
+
+    test('Die Resistenz eines Angriffs bleibt beim Speichern und Laden '
+        '(JSON) erhalten', () {
+      final event = hitWith(DamageEffect.resistance, 4);
+      final restored =
+          LogEvent.fromJson(event.type, event.toJson()) as AttackEvent;
+
+      expect(restored.damageEffect, DamageEffect.resistance);
+      expect(restored.damage, 4);
+    });
+
+    const fire = HpChangeEvent(
+      name: 'Oger',
+      amount: 15,
+      healing: false,
+      hpBefore: 59,
+      hpAfter: 52,
+      maxHp: 59,
+      source: 'Feuerball',
+      damageType: 'Feuer',
+      damageEffect: DamageEffect.resistance,
+    );
+
+    test('Direkter Schaden nennt den wirksamen Schaden, Quelle und '
+        'Resistenz', () {
+      expect(
+        formatter.format(fire).text,
+        'Oger erleidet 7 Schaden (Feuerball, Resistenz)',
+      );
+    });
+
+    test('Die Details von direktem Schaden nennen Schadensart, Resistenz '
+        'und Trefferpunkte', () {
+      expect(detailsOf(fire), [
+        'Quelle: Feuerball',
+        'Schadensart: Feuer',
+        'Resistenz gegen Feuer: 15 → 7',
+        'Trefferpunkte: 59 → 52 (Maximum 59)',
+      ]);
+    });
+
+    test('Direkter Schaden mit Schadensart, aber ohne Resistenz, nennt nur '
+        'die Schadensart', () {
+      const plain = HpChangeEvent(
+        name: 'Oger',
+        amount: 15,
+        healing: false,
+        hpBefore: 59,
+        hpAfter: 44,
+        maxHp: 59,
+        damageType: 'Feuer',
+      );
+
+      expect(formatter.format(plain).text, 'Oger erleidet 15 Schaden');
+      expect(detailsOf(plain), [
+        'Schadensart: Feuer',
+        'Trefferpunkte: 59 → 44 (Maximum 59)',
+      ]);
+    });
+
+    test('Schadensart und Resistenz von direktem Schaden bleiben beim '
+        'Speichern und Laden (JSON) erhalten', () {
+      final restored =
+          LogEvent.fromJson(fire.type, fire.toJson()) as HpChangeEvent;
+
+      expect(restored.damageType, 'Feuer');
+      expect(restored.damageEffect, DamageEffect.resistance);
     });
   });
 }

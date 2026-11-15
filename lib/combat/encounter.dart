@@ -8,6 +8,7 @@ import '../log/log_repository.dart';
 import '../log/roll_record.dart';
 import 'attack.dart';
 import 'combatant.dart';
+import 'damage.dart';
 import 'encounter_store.dart';
 
 /// Result of one attack.
@@ -19,6 +20,7 @@ class AttackOutcome {
     required this.damage,
     required this.targetDown,
     this.damageRoll,
+    this.damageEffect,
   });
 
   final RollRecord attackRoll;
@@ -27,7 +29,13 @@ class AttackOutcome {
 
   /// Null when the attack missed.
   final RollRecord? damageRoll;
+
+  /// Damage dealt, after [damageEffect].
   final int damage;
+
+  /// Resistance, vulnerability or immunity of the target that changed the
+  /// rolled damage; null if none applied.
+  final DamageEffect? damageEffect;
 
   /// The target dropped to 0 hit points through this attack.
   final bool targetDown;
@@ -109,6 +117,24 @@ class Encounter {
   /// Stores a further [attack] on [combatant].
   void addAttack(Combatant combatant, Attack attack) {
     combatant.attacks.add(attack);
+    unawaited(_save());
+  }
+
+  /// Sets how [combatant] reacts to damage of [type]; null for [effect]
+  /// removes the entry. There is one entry per damage type.
+  void setDamageTrait(Combatant combatant, String type, DamageEffect? effect) {
+    final wanted = normalizeDamageType(type);
+    combatant.damageTraits.removeWhere(
+      (key, _) => normalizeDamageType(key) == wanted,
+    );
+    if (effect != null) {
+      // Standard types keep their usual spelling.
+      final name = damageTypes.firstWhere(
+        (standard) => normalizeDamageType(standard) == wanted,
+        orElse: type.trim,
+      );
+      combatant.damageTraits[name] = effect;
+    }
     unawaited(_save());
   }
 
@@ -246,7 +272,9 @@ class Encounter {
   ///
   /// A natural 20 always hits and doubles the damage dice, a natural 1
   /// always misses; otherwise the total has to reach the target's armor
-  /// class. Damage is subtracted from the target's hit points.
+  /// class. Damage is subtracted from the target's hit points, after the
+  /// target's resistance, vulnerability or immunity against the attack's
+  /// damage type.
   ///
   /// [manualAttackRoll] is the counting d20 rolled at the table,
   /// [manualDamage] the sum of the damage dice without the damage bonus.
@@ -276,10 +304,15 @@ class Encounter {
         (!attackRoll.isNatural1 && attackRoll.total >= target.armorClass);
 
     RollRecord? damageRoll;
+    DamageEffect? damageEffect;
     var damage = 0;
     if (hit) {
       damageRoll = _rollDamage(attack, critical, manualDamage);
-      damage = damageRoll.total < 0 ? 0 : damageRoll.total;
+      damageEffect = target.damageEffectFor(attack.damageType);
+      damage = adjustDamage(
+        damageRoll.total < 0 ? 0 : damageRoll.total,
+        damageEffect,
+      );
     }
 
     // Everything is rolled and validated; only now change state and log.
@@ -299,6 +332,7 @@ class Encounter {
         damageType: attack.damageType,
         damageRoll: damageRoll,
         damage: damage,
+        damageEffect: damageEffect,
       ),
     );
     for (final event in consequences) {
@@ -312,19 +346,28 @@ class Encounter {
       critical: critical,
       damageRoll: damageRoll,
       damage: damage,
+      damageEffect: damageEffect,
       targetDown: targetDown,
     );
   }
 
   /// Deals [amount] damage to [target] without an attack, e.g. from a spell
-  /// or a trap. Hit points never drop below 0.
+  /// or a trap. Hit points never drop below 0. With a [damageType] the
+  /// target's resistance, vulnerability or immunity against it applies.
   ///
   /// An [amount] below 1 throws an [ArgumentError] and changes nothing.
   Future<HpChangeEvent> damage(
     Combatant target,
     int amount, {
     String? source,
-  }) => _changeHp(target, amount, healing: false, source: source);
+    String? damageType,
+  }) => _changeHp(
+    target,
+    amount,
+    healing: false,
+    source: source,
+    damageType: damageType,
+  );
 
   /// Heals [target] by [amount]. Hit points never rise above the maximum; a
   /// combatant at 0 hit points is back on their feet and their death saving
@@ -340,6 +383,7 @@ class Encounter {
     int amount, {
     required bool healing,
     String? source,
+    String? damageType,
   }) async {
     if (amount < 1) {
       throw ArgumentError.value(amount, 'amount', 'must be at least 1');
@@ -348,6 +392,10 @@ class Encounter {
     if (healing && target.isDead) {
       throw StateError('${target.name} is dead and cannot be healed');
     }
+
+    final type = damageType?.trim();
+    final knownType = type == null || type.isEmpty ? null : type;
+    final damageEffect = healing ? null : target.damageEffectFor(knownType);
 
     final hpBefore = target.hp;
     var consequences = const <LogEvent>[];
@@ -360,7 +408,7 @@ class Encounter {
         ..deathSaveSuccesses = 0
         ..deathSaveFailures = 0;
     } else {
-      consequences = _applyDamage(target, amount);
+      consequences = _applyDamage(target, adjustDamage(amount, damageEffect));
     }
 
     final trimmed = source?.trim();
@@ -372,6 +420,8 @@ class Encounter {
       hpAfter: target.hp,
       maxHp: target.maxHp,
       source: trimmed == null || trimmed.isEmpty ? null : trimmed,
+      damageType: healing ? null : knownType,
+      damageEffect: damageEffect,
     );
     await _log.add(event);
     for (final consequence in consequences) {

@@ -1,5 +1,6 @@
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/combatant.dart';
+import 'package:dmployee/combat/damage.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/combat/encounter_store.dart';
 import 'package:dmployee/dice/dice_expression.dart';
@@ -713,6 +714,86 @@ void main() {
       expect(find.byKey(const Key('form-error')), findsOneWidget);
       expect(scene.aria.hp, 0);
       expect(await scene.events(), isEmpty);
+    });
+  });
+
+  group('Kampf-Bildschirm: Resistenzen', () {
+    testWidgets('Über "Resistenzen" lässt sich je Schadensart durch '
+        'Antippen Resistenz, Anfälligkeit oder Immunität einstellen', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'traits-1');
+      await tapKey(tester, 'trait-Feuer');
+      expect(scene.goblin.damageTraits, {'Feuer': DamageEffect.resistance});
+
+      await tapKey(tester, 'trait-Feuer');
+      expect(scene.goblin.damageTraits, {'Feuer': DamageEffect.vulnerability});
+
+      await tapKey(tester, 'trait-Feuer');
+      expect(scene.goblin.damageTraits, {'Feuer': DamageEffect.immunity});
+
+      await tapKey(tester, 'trait-Feuer');
+      expect(scene.goblin.damageTraits, isEmpty);
+    });
+
+    testWidgets('Eingestellte Resistenzen stehen beim Kämpfer', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+      expect(find.byKey(const Key('traits-text-1')), findsNothing);
+
+      await tapKey(tester, 'traits-1');
+      await tapKey(tester, 'trait-Feuer');
+      await tapKey(tester, 'trait-Gift');
+      await tapKey(tester, 'trait-Gift');
+      await tapKey(tester, 'trait-Gift');
+      await tapKey(tester, 'traits-done');
+
+      expect(
+        textOf(tester, 'traits-text-1'),
+        'Resistenz: Feuer · Immunität: Gift',
+      );
+    });
+
+    testWidgets('Ein Angriff gegen ein Ziel mit Resistenz zieht nur den '
+        'halben Schaden ab', (tester) async {
+      // Attack 15 hits, damage 4 + 3 = 7, halved to 3.
+      final scene = Scene([15, 4]);
+      scene.encounter.setDamageTrait(
+        scene.goblin,
+        'Hieb',
+        DamageEffect.resistance,
+      );
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await tapKey(tester, 'target-1');
+
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 4/7');
+      expect(
+        textOf(tester, 'last-action'),
+        'Aria hat Goblin für 3 Schaden getroffen (Resistenz)',
+      );
+    });
+
+    testWidgets('Bei "TP ändern" lässt sich eine Schadensart angeben, '
+        'gegen die die Resistenz wirkt', (tester) async {
+      final scene = Scene([]);
+      scene.encounter.setDamageTrait(
+        scene.goblin,
+        'Feuer',
+        DamageEffect.resistance,
+      );
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-1');
+      await type(tester, 'hp-amount', '6');
+      await type(tester, 'hp-damage-type', 'Feuer');
+      await tapKey(tester, 'hp-damage');
+
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 4/7');
     });
   });
 }

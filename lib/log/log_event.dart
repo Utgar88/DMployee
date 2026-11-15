@@ -1,3 +1,4 @@
+import '../combat/damage.dart';
 import 'roll_record.dart';
 
 part 'combat_events.dart';

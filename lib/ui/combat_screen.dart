@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../combat/attack.dart';
 import '../combat/combatant.dart';
+import '../combat/damage.dart';
 import '../combat/encounter.dart';
 import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
@@ -88,6 +89,7 @@ class _CombatScreenState extends State<CombatScreen> {
         damageType: attack.damageType,
         damageRoll: outcome.damageRoll,
         damage: outcome.damage,
+        damageEffect: outcome.damageEffect,
       ),
     );
     setState(() => _lastAction = line.text);
@@ -101,6 +103,29 @@ class _CombatScreenState extends State<CombatScreen> {
     );
     if (event == null || !mounted) return;
     setState(() => _lastAction = widget.formatter.format(event).text);
+  }
+
+  Future<void> _editTraits(Combatant combatant) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) =>
+          _TraitsDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// `Resistenz: Feuer, Kälte · Immunität: Gift`, or null without entries.
+  static String? _traitsText(Combatant combatant) {
+    final groups = [
+      for (final effect in DamageEffect.values)
+        if (combatant.damageTraits.entries
+                .where((entry) => entry.value == effect)
+                .map((entry) => entry.key)
+                .toList()
+            case final types when types.isNotEmpty)
+          '${effect.label}: ${types.join(', ')}',
+    ];
+    return groups.isEmpty ? null : groups.join(' · ');
   }
 
   Future<void> _deathSave(Combatant combatant) async {
@@ -255,6 +280,12 @@ class _CombatScreenState extends State<CombatScreen> {
                 ),
               ],
             ),
+            if (_traitsText(combatant) case final traits?)
+              Text(
+                traits,
+                key: Key('traits-text-$index'),
+                style: theme.textTheme.bodySmall,
+              ),
             if (combatant.isDying)
               Row(
                 children: [
@@ -300,6 +331,12 @@ class _CombatScreenState extends State<CombatScreen> {
                   onPressed: () => _addAttack(combatant),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Angriff'),
+                ),
+                TextButton.icon(
+                  key: Key('traits-$index'),
+                  onPressed: () => _editTraits(combatant),
+                  icon: const Icon(Icons.shield_outlined, size: 18),
+                  label: const Text('Resistenzen'),
                 ),
               ],
             ),
@@ -837,12 +874,14 @@ class _HpDialog extends StatefulWidget {
 class _HpDialogState extends State<_HpDialog> {
   final _amount = TextEditingController();
   final _source = TextEditingController();
+  final _damageType = TextEditingController();
   String? _errorText;
 
   @override
   void dispose() {
     _amount.dispose();
     _source.dispose();
+    _damageType.dispose();
     super.dispose();
   }
 
@@ -865,6 +904,7 @@ class _HpDialogState extends State<_HpDialog> {
             widget.combatant,
             amount,
             source: _source.text,
+            damageType: _damageType.text,
           );
     if (mounted) Navigator.pop(context, event);
   }
@@ -892,6 +932,12 @@ class _HpDialogState extends State<_HpDialog> {
               'Quelle (optional)',
               _source,
               helper: 'z. B. Feuerball, Heiltrank, Falle',
+            ),
+            _field(
+              'hp-damage-type',
+              'Schadensart (optional)',
+              _damageType,
+              helper: 'z. B. Feuer; nur dann wirken Resistenzen',
             ),
             if (_errorText != null) _error(context, _errorText!),
             const SizedBox(height: 8),
@@ -997,6 +1043,85 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
           key: const Key('death-save-confirm'),
           onPressed: _roll,
           child: const Text('Würfeln'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Resistance, vulnerability and immunity of one combatant. Tapping a
+/// damage type steps through the four states; changes apply immediately.
+class _TraitsDialog extends StatefulWidget {
+  const _TraitsDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_TraitsDialog> createState() => _TraitsDialogState();
+}
+
+class _TraitsDialogState extends State<_TraitsDialog> {
+  void _step(String type) {
+    final current = widget.combatant.damageEffectFor(type);
+    final next = switch (current) {
+      null => DamageEffect.resistance,
+      DamageEffect.resistance => DamageEffect.vulnerability,
+      DamageEffect.vulnerability => DamageEffect.immunity,
+      DamageEffect.immunity => null,
+    };
+    setState(
+      () => widget.encounter.setDamageTrait(widget.combatant, type, next),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final combatant = widget.combatant;
+    // Standard types first, then anything else already set.
+    final types = [
+      ...damageTypes,
+      for (final type in combatant.damageTraits.keys)
+        if (!damageTypes.contains(type)) type,
+    ];
+
+    return AlertDialog(
+      title: Text('Resistenzen: ${combatant.name}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Antippen wechselt: normal → Resistenz (halber Schaden) → '
+              'Anfälligkeit (doppelter Schaden) → Immunität (kein Schaden).',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final type in types)
+                  FilterChip(
+                    key: Key('trait-$type'),
+                    showCheckmark: false,
+                    selected: combatant.damageEffectFor(type) != null,
+                    label: Text(switch (combatant.damageEffectFor(type)) {
+                      null => type,
+                      final effect => '$type: ${effect.label}',
+                    }),
+                    onSelected: (_) => _step(type),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          key: const Key('traits-done'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fertig'),
         ),
       ],
     );
