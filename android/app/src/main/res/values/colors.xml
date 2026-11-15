@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark tone of the artwork: behind the app icon and while the app starts. -->
+    <color name="brand_background">#14121F</color>
+</resources>
