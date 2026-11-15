@@ -1,4 +1,7 @@
 import 'package:dmployee/dice/dice_roller.dart';
+import 'package:dmployee/log/log_event.dart';
+import 'package:dmployee/log/log_formatter.dart';
+import 'package:dmployee/log/log_repository.dart';
 import 'package:dmployee/ui/dice_screen.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,10 +9,17 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/fixed_random.dart';
 
 /// Starts the dice screen with predetermined die faces.
-Future<void> pumpDiceScreen(WidgetTester tester, List<int> faces) {
-  return tester.pumpWidget(
-    MaterialApp(home: DiceScreen(roller: DiceRoller(FixedRandom(faces)))),
+Future<InMemoryLogRepository> pumpDiceScreen(
+  WidgetTester tester,
+  List<int> faces,
+) async {
+  final log = InMemoryLogRepository();
+  await tester.pumpWidget(
+    MaterialApp(
+      home: DiceScreen(roller: DiceRoller(FixedRandom(faces)), log: log),
+    ),
   );
+  return log;
 }
 
 Future<void> tapKey(WidgetTester tester, String key) async {
@@ -162,18 +172,51 @@ void main() {
     });
   });
 
-  group('Würfler-Bildschirm: Verlauf', () {
-    testWidgets('Frühere Würfe stehen im Verlauf, der neueste zuerst', (
+  group('Würfler-Bildschirm: Würfe landen im Log', () {
+    testWidgets('Jeder Wurf wird als freier Wurf in den Log geschrieben', (
       tester,
     ) async {
-      await pumpDiceScreen(tester, [3, 18]);
+      final log = await pumpDiceScreen(tester, [3, 18]);
 
       await tapKey(tester, 'roll-button');
       await tapKey(tester, 'roll-button');
 
-      expect(textOf(tester, 'result-total'), '18');
-      expect(textOf(tester, 'history-0'), '1d20: 18 = 18');
-      expect(textOf(tester, 'history-1'), '1d20: 3 = 3');
+      final entries = await log.entries();
+      expect(entries, hasLength(2));
+      expect(entries.every((entry) => entry.event is FreeRollEvent), isTrue);
+      expect(
+        const LogFormatter().format(entries.first.event).text,
+        'Freier Wurf 1d20: 18',
+      );
+    });
+
+    testWidgets('Vorteil, Modifier und Schwierigkeitsgrad stehen vollständig '
+        'im Log-Eintrag', (tester) async {
+      final log = await pumpDiceScreen(tester, [7, 15]);
+
+      await tester.enterText(find.byKey(const Key('dc-field')), '15');
+      await tapKey(tester, 'mode-advantage');
+      await tapKey(tester, 'modifier-plus');
+      await tapKey(tester, 'roll-button');
+
+      final event = (await log.entries()).single.event as FreeRollEvent;
+      expect(event.roll.rolls, [7, 15]);
+      expect(event.roll.mode, RollMode.advantage);
+      expect(event.roll.total, 16);
+      expect(event.dc, 15);
+    });
+
+    testWidgets('Ein Wurf mit mehreren Würfeln steht mit allen Einzelwürfen '
+        'im Log', (tester) async {
+      final log = await pumpDiceScreen(tester, [4, 5]);
+
+      await tapKey(tester, 'die-6');
+      await tapKey(tester, 'count-plus');
+      await tapKey(tester, 'roll-button');
+
+      final event = (await log.entries()).single.event as FreeRollEvent;
+      expect(event.roll.rolls, [4, 5]);
+      expect(event.roll.notation, '2d6');
     });
   });
 }

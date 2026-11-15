@@ -4,27 +4,40 @@ import 'package:flutter/services.dart';
 import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
+import '../log/log_event.dart';
+import '../log/log_repository.dart';
+import '../log/roll_record.dart';
 
-/// One finished roll as shown in the result card and the history.
+/// One finished roll as shown in the result card, plus the event written to
+/// the log for it.
 class _RollEntry {
-  const _RollEntry({required this.total, required this.detail, this.note});
+  const _RollEntry({
+    required this.total,
+    required this.detail,
+    required this.event,
+    this.note,
+  });
 
   final int total;
   final String detail;
   final String? note;
+  final FreeRollEvent event;
 }
 
 /// Dice roller screen: pick a die, count and modifier, then roll.
 ///
 /// A single d20 can additionally be rolled with advantage or disadvantage and
 /// against a difficulty class (saving throw / ability check).
+///
+/// Every roll is written to the [log] as a free roll.
 class DiceScreen extends StatefulWidget {
-  DiceScreen({super.key, DiceRoller? roller}) : roller = roller ?? DiceRoller();
+  DiceScreen({super.key, required this.log, DiceRoller? roller})
+    : roller = roller ?? DiceRoller();
 
+  final LogRepository log;
   final DiceRoller roller;
 
   static const dice = [4, 6, 8, 10, 12, 20, 100];
-  static const historyLimit = 50;
 
   @override
   State<DiceScreen> createState() => _DiceScreenState();
@@ -32,7 +45,7 @@ class DiceScreen extends StatefulWidget {
 
 class _DiceScreenState extends State<DiceScreen> {
   final _dcController = TextEditingController();
-  final _history = <_RollEntry>[];
+  _RollEntry? _latest;
 
   int _sides = 20;
   int _count = 1;
@@ -51,16 +64,12 @@ class _DiceScreenState extends State<DiceScreen> {
     super.dispose();
   }
 
-  void _roll() {
+  Future<void> _roll() async {
     final dc = _isSingleD20 ? int.tryParse(_dcController.text) : null;
     final entry = _isSingleD20 ? _rollD20(dc) : _rollExpression();
 
-    setState(() {
-      _history.insert(0, entry);
-      if (_history.length > DiceScreen.historyLimit) {
-        _history.removeLast();
-      }
-    });
+    setState(() => _latest = entry);
+    await widget.log.add(entry.event);
   }
 
   _RollEntry _rollExpression() {
@@ -70,6 +79,7 @@ class _DiceScreenState extends State<DiceScreen> {
       detail:
           '$_expression: ${result.rolls.join(' + ')}'
           '${_modifierSuffix(_modifier)}',
+      event: FreeRollEvent(roll: RollRecord.fromRoll(result)),
     );
   }
 
@@ -99,7 +109,12 @@ class _DiceScreenState extends State<DiceScreen> {
       note = 'Natürliche 1';
     }
 
-    return _RollEntry(total: roll.total, detail: detail, note: note);
+    return _RollEntry(
+      total: roll.total,
+      detail: detail,
+      note: note,
+      event: FreeRollEvent(roll: RollRecord.fromD20(roll), dc: dc),
+    );
   }
 
   static String _modifierSuffix(int modifier) {
@@ -110,7 +125,7 @@ class _DiceScreenState extends State<DiceScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final latest = _history.isEmpty ? null : _history.first;
+    final latest = _latest;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Würfler')),
@@ -224,16 +239,6 @@ class _DiceScreenState extends State<DiceScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text('Verlauf', style: theme.textTheme.titleSmall),
-              for (final (index, entry) in _history.indexed)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    '${entry.detail} = ${entry.total}',
-                    key: Key('history-$index'),
-                  ),
-                ),
             ],
           ],
         ),
