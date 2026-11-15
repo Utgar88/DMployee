@@ -1,4 +1,5 @@
 import 'attack.dart';
+import 'buff.dart';
 import 'condition.dart';
 import 'damage.dart';
 
@@ -35,6 +36,10 @@ class Combatant {
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
       ..isStable = json['isStable'] as bool? ?? false
       ..isDead = json['isDead'] as bool? ?? false
+      ..buffs.addAll([
+        for (final buff in json['buffs'] as List? ?? const [])
+          Buff.fromJson((buff as Map).cast<String, Object?>()),
+      ])
       ..conditions.addAll([
         for (final condition in json['conditions'] as List? ?? const [])
           ?ActiveCondition.fromJson((condition as Map).cast<String, Object?>()),
@@ -97,6 +102,15 @@ class Combatant {
   bool hasCondition(Condition condition) =>
       conditions.any((active) => active.condition == condition);
 
+  /// Effects currently on the combatant. Change them through
+  /// `Encounter.addBuff` and `removeBuff`.
+  final List<Buff> buffs = [];
+
+  /// [armorClass] plus the armor class bonuses of all [buffs]. This is
+  /// what an attack has to reach.
+  int get effectiveArmorClass =>
+      armorClass + buffs.fold(0, (sum, buff) => sum + buff.armorClassBonus);
+
   /// At 0 hit points.
   bool get isDown => hp <= 0;
 
@@ -119,6 +133,7 @@ class Combatant {
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+    'buffs': [for (final buff in buffs) buff.toJson()],
     'conditions': [for (final condition in conditions) condition.toJson()],
     'damageTraits': {
       for (final MapEntry(:key, :value) in damageTraits.entries)

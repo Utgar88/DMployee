@@ -385,9 +385,9 @@ void main() {
       final events = (await scene.events()).cast<ConditionEvent>();
       expect(events.first.name, 'Oger');
       expect(events.first.condition, 'poisoned');
-      expect(events.first.change, ConditionChange.added);
+      expect(events.first.change, EffectChange.added);
       expect(events.first.rounds, 3);
-      expect(events.last.change, ConditionChange.removed);
+      expect(events.last.change, EffectChange.removed);
     });
 
     test('Das Entfernen eines Zustands, den der Kämpfer nicht hat, schreibt '
@@ -412,7 +412,7 @@ void main() {
       await scene.encounter.nextTurn();
 
       final expired = (await scene.events()).whereType<ConditionEvent>().last;
-      expect(expired.change, ConditionChange.expired);
+      expect(expired.change, EffectChange.expired);
       expect(expired.name, 'Oger');
     });
 

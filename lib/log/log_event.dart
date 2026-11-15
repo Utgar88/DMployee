@@ -1,5 +1,6 @@
 import '../combat/damage.dart';
 import '../dice/dice_roller.dart';
+import '../dice/modifier.dart';
 import 'roll_record.dart';
 
 part 'combat_events.dart';
@@ -31,6 +32,7 @@ sealed class LogEvent {
       CombatantStableEvent.typeName => CombatantStableEvent.fromJson(json),
       CombatantDiedEvent.typeName => CombatantDiedEvent.fromJson(json),
       ConditionEvent.typeName => ConditionEvent.fromJson(json),
+      BuffEvent.typeName => BuffEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

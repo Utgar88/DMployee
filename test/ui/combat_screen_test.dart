@@ -1,4 +1,5 @@
 import 'package:dmployee/combat/attack.dart';
+import 'package:dmployee/combat/buff.dart';
 import 'package:dmployee/combat/combatant.dart';
 import 'package:dmployee/combat/condition.dart';
 import 'package:dmployee/combat/damage.dart';
@@ -907,6 +908,155 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Liegend'), findsWidgets);
+    });
+  });
+
+  group('Kampf-Bildschirm: Effekte', () {
+    testWidgets('Über "Effekt" lässt sich ein Effekt mit Namen, Bonus auf '
+        'den Angriffswurf und Dauer vergeben; er steht danach beim '
+        'Kämpfer', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Segen');
+      await type(tester, 'buff-attack', '1d4');
+      await type(tester, 'buff-rounds', '10');
+      await tapKey(tester, 'buff-save');
+
+      final buff = scene.aria.buffs.single;
+      expect(buff.name, 'Segen');
+      expect('${buff.attackBonus}', '+1d4');
+      expect(buff.roundsLeft, 10);
+      expect(find.text('Segen: Angriff +1d4 (10)'), findsOneWidget);
+    });
+
+    testWidgets('Ein Bonus auf die Rüstungsklasse steht bei den Werten des '
+        'Kämpfers', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-1');
+      await type(tester, 'buff-name', 'Schild des Glaubens');
+      await type(tester, 'buff-ac', '2');
+      await tapKey(tester, 'buff-save');
+
+      expect(textOf(tester, 'stats-1'), 'RK 15 (13 +2) · TP 7/7');
+      expect(find.text('Schild des Glaubens: RK +2'), findsOneWidget);
+    });
+
+    testWidgets('Ohne Namen wird kein Effekt angelegt und eine Meldung '
+        'erscheint', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-attack', '1d4');
+      await tapKey(tester, 'buff-save');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.buffs, isEmpty);
+    });
+
+    testWidgets('Ein unlesbarer Bonus auf den Angriffswurf wird mit einer '
+        'Meldung abgelehnt', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Segen');
+      await type(tester, 'buff-attack', 'viel');
+      await tapKey(tester, 'buff-save');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.buffs, isEmpty);
+    });
+
+    testWidgets('Ein Effekt lässt sich am Kämpfer wieder entfernen', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.encounter.addBuff(
+        scene.goblin,
+        name: 'Schild des Glaubens',
+        armorClassBonus: 2,
+      );
+      await scene.pump(tester);
+
+      await tapKey(tester, 'remove-buff-1-0');
+
+      expect(scene.goblin.buffs, isEmpty);
+      expect(textOf(tester, 'stats-1'), 'RK 13 · TP 7/7');
+    });
+
+    testWidgets('Ein Angriff rechnet den Bonuswürfel des Angreifers von '
+        'selbst ein', (tester) async {
+      // Bonus die 4, d20 4: 4 + 5 + 4 = 13 hits RK 13; damage die 1.
+      final scene = Scene([4, 4, 1]);
+      await scene.encounter.addBuff(
+        scene.aria,
+        name: 'Segen',
+        attackBonus: Bonus.parse('1d4'),
+      );
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.attackRoll.total, 13);
+      expect(attack.hit, isTrue);
+    });
+
+    testWidgets('Im Angriffsfenster lässt sich der Bonuswürfel von Hand '
+        'eintragen', (tester) async {
+      final scene = Scene([]);
+      await scene.encounter.addBuff(
+        scene.aria,
+        name: 'Segen',
+        attackBonus: Bonus.parse('1d4'),
+      );
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await type(tester, 'manual-attack', '2');
+      await type(tester, 'manual-buff-0', '3');
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.attackRoll.total, 10);
+      expect(attack.attackRoll.modifiers.last.label, 'Segen (1d4 von Hand)');
+    });
+
+    testWidgets('Ohne Bonuswürfel beim Angreifer fehlt das Feld im '
+        'Angriffsfenster', (tester) async {
+      await Scene([]).pump(tester);
+
+      await openAttack(tester);
+
+      expect(find.byKey(const Key('manual-buff-0')), findsNothing);
+    });
+
+    testWidgets('Die Zielauswahl zeigt die wirksame Rüstungsklasse', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.encounter.addBuff(
+        scene.goblin,
+        name: 'Schild des Glaubens',
+        armorClassBonus: 2,
+      );
+      await scene.pump(tester);
+
+      await openAttack(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('target-1')),
+          matching: find.textContaining('RK 15'),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

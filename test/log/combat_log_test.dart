@@ -599,52 +599,51 @@ void main() {
   });
 
   group('Log-Zeilen für Zustände', () {
-    ConditionEvent event(ConditionChange change, {int? rounds}) =>
-        ConditionEvent(
-          name: 'Oger',
-          condition: 'poisoned',
-          change: change,
-          rounds: rounds,
-        );
+    ConditionEvent event(EffectChange change, {int? rounds}) => ConditionEvent(
+      name: 'Oger',
+      condition: 'poisoned',
+      change: change,
+      rounds: rounds,
+    );
 
     test('Ein vergebener Zustand steht mit Kämpfer und Zustand da', () {
       expect(
-        formatter.format(event(ConditionChange.added)).text,
+        formatter.format(event(EffectChange.added)).text,
         'Oger ist jetzt vergiftet',
       );
     });
 
     test('Eine Dauer steht in Klammern dahinter', () {
       expect(
-        formatter.format(event(ConditionChange.added, rounds: 3)).text,
+        formatter.format(event(EffectChange.added, rounds: 3)).text,
         'Oger ist jetzt vergiftet (3 Runden)',
       );
       expect(
-        formatter.format(event(ConditionChange.added, rounds: 1)).text,
+        formatter.format(event(EffectChange.added, rounds: 1)).text,
         'Oger ist jetzt vergiftet (1 Runde)',
       );
     });
 
     test('Entfernen und Ablaufen sind unterscheidbar', () {
       expect(
-        formatter.format(event(ConditionChange.removed)).text,
+        formatter.format(event(EffectChange.removed)).text,
         'Oger ist nicht mehr vergiftet',
       );
       expect(
-        formatter.format(event(ConditionChange.expired)).text,
+        formatter.format(event(EffectChange.expired)).text,
         'Oger ist nicht mehr vergiftet (Dauer abgelaufen)',
       );
     });
 
     test('Ein Zustand kommt nach dem Speichern und Laden (JSON) unverändert '
         'zurück', () {
-      final original = event(ConditionChange.added, rounds: 3);
+      final original = event(EffectChange.added, rounds: 3);
       final restored =
           LogEvent.fromJson(original.type, original.toJson()) as ConditionEvent;
 
       expect(restored.name, 'Oger');
       expect(restored.condition, 'poisoned');
-      expect(restored.change, ConditionChange.added);
+      expect(restored.change, EffectChange.added);
       expect(restored.rounds, 3);
     });
 
@@ -758,6 +757,119 @@ void main() {
 
       expect(restored.conditionEffects, isEmpty);
       expect(restored.chosenMode, RollMode.normal);
+    });
+  });
+
+  group('Log-Zeilen für Effekte', () {
+    BuffEvent event(
+      EffectChange change, {
+      String? attackBonus,
+      int armorClassBonus = 0,
+      int? rounds,
+    }) => BuffEvent(
+      name: 'Aria',
+      buff: 'Segen',
+      change: change,
+      attackBonus: attackBonus,
+      armorClassBonus: armorClassBonus,
+      rounds: rounds,
+    );
+
+    test('Ein vergebener Effekt nennt Kämpfer, Namen, Wirkung und Dauer', () {
+      expect(
+        formatter
+            .format(event(EffectChange.added, attackBonus: '+1d4', rounds: 10))
+            .text,
+        'Aria erhält Segen (Angriff +1d4, 10 Runden)',
+      );
+    });
+
+    test('Ein Bonus auf die Rüstungsklasse steht als RK da', () {
+      expect(
+        formatter.format(event(EffectChange.added, armorClassBonus: 2)).text,
+        'Aria erhält Segen (RK +2)',
+      );
+      expect(
+        formatter.format(event(EffectChange.added, armorClassBonus: -2)).text,
+        'Aria erhält Segen (RK -2)',
+      );
+    });
+
+    test('Ein Effekt ohne Werte steht ohne Klammer da', () {
+      expect(
+        formatter.format(event(EffectChange.added)).text,
+        'Aria erhält Segen',
+      );
+    });
+
+    test('Entfernen und Ablaufen sind unterscheidbar', () {
+      expect(
+        formatter.format(event(EffectChange.removed)).text,
+        'Segen endet bei Aria',
+      );
+      expect(
+        formatter.format(event(EffectChange.expired)).text,
+        'Segen endet bei Aria (Dauer abgelaufen)',
+      );
+    });
+
+    test('Ein Effekt kommt nach dem Speichern und Laden (JSON) unverändert '
+        'zurück', () {
+      final original = event(
+        EffectChange.added,
+        attackBonus: '+1d4',
+        armorClassBonus: 1,
+        rounds: 10,
+      );
+      final restored =
+          LogEvent.fromJson(original.type, original.toJson()) as BuffEvent;
+
+      expect(restored.name, 'Aria');
+      expect(restored.buff, 'Segen');
+      expect(restored.change, EffectChange.added);
+      expect(restored.attackBonus, '+1d4');
+      expect(restored.armorClassBonus, 1);
+      expect(restored.rounds, 10);
+    });
+
+    final shielded = AttackEvent(
+      attackerName: 'Aria',
+      targetName: 'Oger',
+      attackName: 'Langschwert',
+      targetArmorClass: 13,
+      attackRoll: attackRoll([7]),
+      hit: false,
+      critical: false,
+      damageType: 'Hieb',
+      armorClassModifiers: [Modifier('Schild des Glaubens', 2)],
+    );
+
+    test('Die Details eines Angriffs zeigen, woraus sich die '
+        'Rüstungsklasse des Ziels zusammensetzt', () {
+      expect(
+        detailsOf(shielded),
+        containsAllInOrder([
+          'Rüstungsklasse: 11 +2 Schild des Glaubens = 13',
+          'Verfehlt gegen RK 13',
+        ]),
+      );
+    });
+
+    test('Ohne Effekt auf die Rüstungsklasse fehlt diese Zeile', () {
+      expect(
+        detailsOf(missEvent).where((line) => line.startsWith('Rüstungsklasse')),
+        isEmpty,
+      );
+    });
+
+    test('Die Zusammensetzung der Rüstungsklasse bleibt beim Speichern und '
+        'Laden (JSON) erhalten', () {
+      final restored =
+          LogEvent.fromJson(shielded.type, shielded.toJson()) as AttackEvent;
+
+      expect(restored.armorClassModifiers, [
+        Modifier('Schild des Glaubens', 2),
+      ]);
     });
   });
 }

@@ -1,5 +1,7 @@
+import '../combat/buff.dart';
 import '../combat/condition.dart';
 import '../dice/dice_roller.dart';
+import '../dice/modifier.dart';
 import 'log_event.dart';
 import 'roll_record.dart';
 
@@ -50,6 +52,7 @@ class LogFormatter {
         ),
       ]),
       ConditionEvent() => _condition(event),
+      BuffEvent() => _buff(event),
       CombatantStableEvent() => LogLine([LogSpan('${event.name} ist stabil')]),
       CombatantDiedEvent() => LogLine([
         LogSpan(
@@ -82,6 +85,11 @@ class LogFormatter {
       'Angriff: ${event.attackName}',
       ...rollDetails(event.attackRoll),
       ..._modeReasons(event),
+      if (event.armorClassModifiers.isNotEmpty)
+        'Rüstungsklasse: '
+            '${event.targetArmorClass - Modifier.sum(event.armorClassModifiers)} '
+            '${event.armorClassModifiers.join(' ')} '
+            '= ${event.targetArmorClass}',
     ];
 
     if (!event.hit) {
@@ -162,12 +170,33 @@ class LogFormatter {
     final rounds = event.rounds;
     return LogLine([
       LogSpan(switch (event.change) {
-        ConditionChange.added =>
+        EffectChange.added =>
           '${event.name} ist jetzt $word'
               '${rounds == null ? '' : ' ($rounds ${rounds == 1 ? 'Runde' : 'Runden'})'}',
-        ConditionChange.removed => '${event.name} ist nicht mehr $word',
-        ConditionChange.expired =>
+        EffectChange.removed => '${event.name} ist nicht mehr $word',
+        EffectChange.expired =>
           '${event.name} ist nicht mehr $word (Dauer abgelaufen)',
+      }),
+    ]);
+  }
+
+  LogLine _buff(BuffEvent event) {
+    final rounds = event.rounds;
+    final notes = [
+      ...describeBuffEffects(
+        attackBonus: event.attackBonus,
+        armorClassBonus: event.armorClassBonus,
+      ),
+      if (rounds != null) '$rounds ${rounds == 1 ? 'Runde' : 'Runden'}',
+    ];
+    return LogLine([
+      LogSpan(switch (event.change) {
+        EffectChange.added =>
+          '${event.name} erhält ${event.buff}'
+              '${notes.isEmpty ? '' : ' (${notes.join(', ')})'}',
+        EffectChange.removed => '${event.buff} endet bei ${event.name}',
+        EffectChange.expired =>
+          '${event.buff} endet bei ${event.name} (Dauer abgelaufen)',
       }),
     ]);
   }

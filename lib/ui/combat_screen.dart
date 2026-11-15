@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../combat/attack.dart';
+import '../combat/buff.dart';
 import '../combat/combatant.dart';
 import '../combat/condition.dart';
 import '../combat/damage.dart';
@@ -100,6 +101,14 @@ class _CombatScreenState extends State<CombatScreen> {
     if (mounted) setState(() {});
   }
 
+  /// `13`, or `15 (13 +2)` while effects change the armor class.
+  static String _armorClassText(Combatant combatant) {
+    final bonus = combatant.effectiveArmorClass - combatant.armorClass;
+    if (bonus == 0) return '${combatant.armorClass}';
+    return '${combatant.effectiveArmorClass} '
+        '(${combatant.armorClass} ${bonus > 0 ? '+' : ''}$bonus)';
+  }
+
   /// `Resistenz: Feuer, Kälte · Immunität: Gift`, or null without entries.
   static String? _traitsText(Combatant combatant) {
     final groups = [
@@ -128,6 +137,20 @@ class _CombatScreenState extends State<CombatScreen> {
     Condition condition,
   ) async {
     await _encounter.removeCondition(combatant, condition);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _addBuff(Combatant combatant) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) =>
+          _BuffDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _removeBuff(Combatant combatant, Buff buff) async {
+    await _encounter.removeBuff(combatant, buff);
     if (mounted) setState(() {});
   }
 
@@ -267,7 +290,7 @@ class _CombatScreenState extends State<CombatScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'RK ${combatant.armorClass} · '
+                    'RK ${_armorClassText(combatant)} · '
                     'TP ${combatant.hp}/${combatant.maxHp}',
                     key: Key('stats-$index'),
                   ),
@@ -316,13 +339,27 @@ class _CombatScreenState extends State<CombatScreen> {
                 key: Key('initiative-$index'),
                 style: theme.textTheme.bodySmall,
               ),
-            if (combatant.conditions.isNotEmpty)
+            if (combatant.conditions.isNotEmpty || combatant.buffs.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 4,
                   children: [
+                    for (final (buffIndex, buff) in combatant.buffs.indexed)
+                      InputChip(
+                        key: Key('buff-$index-$buffIndex'),
+                        visualDensity: VisualDensity.compact,
+                        avatar: const Icon(Icons.auto_awesome, size: 16),
+                        label: Text(buff.summary),
+                        deleteButtonTooltipMessage: 'Effekt entfernen',
+                        deleteIcon: Icon(
+                          Icons.close,
+                          key: Key('remove-buff-$index-$buffIndex'),
+                          size: 18,
+                        ),
+                        onDeleted: () => _removeBuff(combatant, buff),
+                      ),
                     for (final active in combatant.conditions)
                       InputChip(
                         key: Key('condition-$index-${active.condition.name}'),
@@ -371,6 +408,12 @@ class _CombatScreenState extends State<CombatScreen> {
                   onPressed: () => _addCondition(combatant),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Zustand'),
+                ),
+                TextButton.icon(
+                  key: Key('add-buff-$index'),
+                  onPressed: () => _addBuff(combatant),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Effekt'),
                 ),
                 TextButton.icon(
                   key: Key('traits-$index'),
@@ -814,6 +857,13 @@ class _TargetDialog extends StatefulWidget {
 class _TargetDialogState extends State<_TargetDialog> {
   final _manualAttack = TextEditingController();
   final _manualDamage = TextEditingController();
+
+  /// The attacker's effects with bonus dice, each with a field for a die
+  /// rolled at the table.
+  late final _buffDice = {
+    for (final buff in widget.attacker.buffs)
+      if (buff.attackBonus?.isDice ?? false) buff: TextEditingController(),
+  };
   RollMode _mode = RollMode.normal;
   bool _applyConditions = true;
   String? _errorText;
@@ -822,6 +872,9 @@ class _TargetDialogState extends State<_TargetDialog> {
   void dispose() {
     _manualAttack.dispose();
     _manualDamage.dispose();
+    for (final controller in _buffDice.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -834,6 +887,11 @@ class _TargetDialogState extends State<_TargetDialog> {
         mode: _mode,
         manualAttackRoll: int.tryParse(_manualAttack.text),
         manualDamage: int.tryParse(_manualDamage.text),
+        manualBuffRolls: {
+          for (final MapEntry(key: buff, value: controller)
+              in _buffDice.entries)
+            buff: ?int.tryParse(controller.text),
+        },
         applyConditions: _applyConditions,
       );
       if (mounted) Navigator.pop(context, _AttackResult(target, outcome));
@@ -910,6 +968,16 @@ class _TargetDialogState extends State<_TargetDialog> {
               formatters: _digits,
               number: true,
             ),
+            for (final (index, MapEntry(key: buff, value: controller))
+                in _buffDice.entries.indexed)
+              _field(
+                'manual-buff-$index',
+                '${buff.name} (${buff.attackBonus!.dice})',
+                controller,
+                helper: 'Augensumme des Bonuswürfels',
+                formatters: _digits,
+                number: true,
+              ),
             _field(
               'manual-damage',
               'Schadenswürfel (Summe)',
@@ -929,7 +997,7 @@ class _TargetDialogState extends State<_TargetDialog> {
                   title: Text(combatant.name),
                   subtitle: Text(
                     [
-                      'RK ${combatant.armorClass} · '
+                      'RK ${combatant.effectiveArmorClass} · '
                           'TP ${combatant.hp}/${combatant.maxHp}',
                       for (final active in combatant.conditions)
                         '${active.condition.label}: '
@@ -1294,6 +1362,128 @@ class _ConditionDialogState extends State<_ConditionDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Abbrechen'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Gives a combatant a named effect: bonus or penalty on attack rolls
+/// and/or armor class, with an optional duration.
+class _BuffDialog extends StatefulWidget {
+  const _BuffDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_BuffDialog> createState() => _BuffDialogState();
+}
+
+class _BuffDialogState extends State<_BuffDialog> {
+  final _name = TextEditingController();
+  final _attack = TextEditingController();
+  final _armorClass = TextEditingController();
+  final _rounds = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _attack.dispose();
+    _armorClass.dispose();
+    _rounds.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_name.text.trim().isEmpty) {
+      setState(() => _errorText = 'Der Effekt braucht einen Namen.');
+      return;
+    }
+    Bonus? attackBonus;
+    if (_attack.text.trim().isNotEmpty) {
+      try {
+        attackBonus = Bonus.parse(_attack.text);
+      } on FormatException {
+        setState(
+          () => _errorText =
+              'Bonus auf den Angriffswurf bitte wie 1d4, -1d4 oder 2 angeben.',
+        );
+        return;
+      }
+    }
+    final armorClass = _armorClass.text.trim().isEmpty
+        ? 0
+        : int.tryParse(_armorClass.text.trim());
+    if (armorClass == null) {
+      setState(
+        () => _errorText =
+            'Bonus auf die Rüstungsklasse bitte als Zahl angeben, z. B. 2.',
+      );
+      return;
+    }
+    final rounds = _rounds.text.isEmpty ? null : int.tryParse(_rounds.text);
+    if (_rounds.text.isNotEmpty && (rounds == null || rounds < 1)) {
+      setState(() => _errorText = 'Die Dauer beträgt mindestens 1 Runde.');
+      return;
+    }
+
+    await widget.encounter.addBuff(
+      widget.combatant,
+      name: _name.text,
+      attackBonus: attackBonus,
+      armorClassBonus: armorClass,
+      rounds: rounds,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Effekt für ${widget.combatant.name}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _field('buff-name', 'Name (z. B. Segen)', _name),
+            _field(
+              'buff-attack',
+              'Angriffswurf (optional)',
+              _attack,
+              helper: 'z. B. 1d4, -1d4 oder 2',
+            ),
+            _field(
+              'buff-ac',
+              'Rüstungsklasse (optional)',
+              _armorClass,
+              helper: 'z. B. 2 oder -2',
+              formatters: _signedDigits,
+              number: true,
+            ),
+            _field(
+              'buff-rounds',
+              'Dauer in Runden (optional)',
+              _rounds,
+              helper: 'Leer: bleibt, bis der Effekt entfernt wird',
+              formatters: _digits,
+              number: true,
+            ),
+            if (_errorText != null) _error(context, _errorText!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          key: const Key('buff-save'),
+          onPressed: _save,
+          child: const Text('Vergeben'),
         ),
       ],
     );

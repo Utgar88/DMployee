@@ -7,6 +7,7 @@ import '../log/log_event.dart';
 import '../log/log_repository.dart';
 import '../log/roll_record.dart';
 import 'attack.dart';
+import 'buff.dart';
 import 'combatant.dart';
 import 'condition.dart';
 import 'damage.dart';
@@ -162,7 +163,7 @@ class Encounter {
       ConditionEvent(
         name: combatant.name,
         condition: condition.name,
-        change: ConditionChange.added,
+        change: EffectChange.added,
         rounds: rounds,
       ),
     );
@@ -178,16 +179,77 @@ class Encounter {
       ConditionEvent(
         name: combatant.name,
         condition: condition.name,
-        change: ConditionChange.removed,
+        change: EffectChange.removed,
       ),
     );
     await _save();
+  }
+
+  /// Gives [combatant] an effect called [name]: a bonus or penalty on
+  /// attack rolls and/or armor class, optionally for a number of [rounds]
+  /// (see [nextTurn]). Effects of the same name do not stack; the new one
+  /// replaces the old one.
+  ///
+  /// An empty [name] or [rounds] below 1 throws an [ArgumentError] and
+  /// changes nothing.
+  Future<Buff> addBuff(
+    Combatant combatant, {
+    required String name,
+    Bonus? attackBonus,
+    int armorClassBonus = 0,
+    int? rounds,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be empty');
+    }
+    if (rounds != null && rounds < 1) {
+      throw ArgumentError.value(rounds, 'rounds', 'must be at least 1');
+    }
+    final buff = Buff(
+      name: trimmed,
+      attackBonus: attackBonus,
+      armorClassBonus: armorClassBonus,
+      roundsLeft: rounds,
+    );
+    combatant.buffs
+      ..removeWhere((b) => b.name.toLowerCase() == trimmed.toLowerCase())
+      ..add(buff);
+    await _log.add(_buffEvent(combatant, buff, EffectChange.added));
+    await _save();
+    return buff;
+  }
+
+  /// Takes [buff] from [combatant]; does nothing if they do not have it.
+  Future<void> removeBuff(Combatant combatant, Buff buff) async {
+    if (!combatant.buffs.remove(buff)) return;
+    await _log.add(_buffEvent(combatant, buff, EffectChange.removed));
+    await _save();
+  }
+
+  BuffEvent _buffEvent(Combatant combatant, Buff buff, EffectChange change) {
+    return BuffEvent(
+      name: combatant.name,
+      buff: buff.name,
+      change: change,
+      attackBonus: buff.attackBonus?.toString(),
+      armorClassBonus: buff.armorClassBonus,
+      rounds: change == EffectChange.added ? buff.roundsLeft : null,
+    );
   }
 
   /// Counts down everything with a duration on [combatant] at the end of
   /// their turn and returns what ran out.
   List<LogEvent> _endTurn(Combatant combatant) {
     final expired = <LogEvent>[];
+    combatant.buffs.removeWhere((buff) {
+      final left = buff.roundsLeft;
+      if (left == null) return false;
+      buff.roundsLeft = left - 1;
+      if (left > 1) return false;
+      expired.add(_buffEvent(combatant, buff, EffectChange.expired));
+      return true;
+    });
     combatant.conditions.removeWhere((active) {
       final left = active.roundsLeft;
       if (left == null) return false;
@@ -197,7 +259,7 @@ class Encounter {
         ConditionEvent(
           name: combatant.name,
           condition: active.condition.name,
-          change: ConditionChange.expired,
+          change: EffectChange.expired,
         ),
       );
       return true;
@@ -356,6 +418,11 @@ class Encounter {
   /// top of the [mode] the game master chose, unless [applyConditions] is
   /// false. Any advantage together with any disadvantage cancels out.
   ///
+  /// Effects on the attacker add their bonus to the attack roll (bonus dice
+  /// are rolled before the d20); effects on the target change the armor
+  /// class the attack has to reach.
+  ///
+  /// [manualBuffRolls] holds bonus dice rolled at the table, per effect.
   /// [manualAttackRoll] is the counting d20 rolled at the table,
   /// [manualDamage] the sum of the damage dice without the damage bonus.
   /// Impossible values throw an [ArgumentError] and change nothing.
@@ -366,6 +433,7 @@ class Encounter {
     RollMode mode = RollMode.normal,
     int? manualAttackRoll,
     int? manualDamage,
+    Map<Buff, int> manualBuffRolls = const {},
     bool applyConditions = true,
   }) async {
     final conditionEffects = applyConditions
@@ -380,7 +448,18 @@ class Encounter {
         ? RollMode.normal
         : (hasAdvantage ? RollMode.advantage : RollMode.disadvantage);
 
-    final attackModifiers = [Modifier('Angriffsbonus', attack.attackBonus)];
+    final attackModifiers = [
+      Modifier('Angriffsbonus', attack.attackBonus),
+      for (final buff in attacker.buffs)
+        if (buff.attackBonus case final bonus?)
+          _buffModifier(buff.name, bonus, manualBuffRolls[buff]),
+    ];
+    final armorClassModifiers = [
+      for (final buff in target.buffs)
+        if (buff.armorClassBonus != 0)
+          Modifier(buff.name, buff.armorClassBonus),
+    ];
+    final armorClass = target.effectiveArmorClass;
     final attackRoll = manualAttackRoll != null
         ? RollRecord.manualD20(
             manualAttackRoll,
@@ -393,8 +472,7 @@ class Encounter {
 
     final critical = attackRoll.isNatural20;
     final hit =
-        critical ||
-        (!attackRoll.isNatural1 && attackRoll.total >= target.armorClass);
+        critical || (!attackRoll.isNatural1 && attackRoll.total >= armorClass);
 
     RollRecord? damageRoll;
     DamageEffect? damageEffect;
@@ -417,7 +495,8 @@ class Encounter {
       attackerName: attacker.name,
       targetName: target.name,
       attackName: attack.name,
-      targetArmorClass: target.armorClass,
+      targetArmorClass: armorClass,
+      armorClassModifiers: armorClassModifiers,
       attackRoll: attackRoll,
       hit: hit,
       critical: critical,
@@ -630,6 +709,26 @@ class Encounter {
     if (consequence != null) await _log.add(consequence);
     await _save();
     return event;
+  }
+
+  /// The attack roll modifier from an effect called [name]: a fixed value,
+  /// or bonus dice rolled by the app or typed in as [manual].
+  Modifier _buffModifier(String name, Bonus bonus, int? manual) {
+    if (!bonus.isDice) return Modifier(name, bonus.signed(bonus.flat));
+    if (manual == null) {
+      final rolled = _roller.roll(
+        DiceExpression(count: bonus.count, sides: bonus.sides),
+      );
+      return Modifier('$name (${bonus.dice})', bonus.signed(rolled.total));
+    }
+    if (manual < bonus.count || manual > bonus.count * bonus.sides) {
+      throw ArgumentError.value(
+        manual,
+        'manualBuffRolls',
+        '${bonus.dice} shows ${bonus.count} to ${bonus.count * bonus.sides}',
+      );
+    }
+    return Modifier('$name (${bonus.dice} von Hand)', bonus.signed(manual));
   }
 
   /// Conditions that give advantage or disadvantage when [attacker]

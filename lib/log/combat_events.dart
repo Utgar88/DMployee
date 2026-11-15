@@ -52,6 +52,7 @@ class AttackEvent extends LogEvent {
     this.damage = 0,
     this.damageEffect,
     this.conditionEffects = const [],
+    this.armorClassModifiers = const [],
     this._chosenMode,
   });
 
@@ -72,6 +73,10 @@ class AttackEvent extends LogEvent {
         for (final effect in json['conditionEffects'] as List? ?? const [])
           ConditionEffect.fromJson((effect as Map).cast<String, Object?>()),
       ],
+      armorClassModifiers: [
+        for (final modifier in json['armorClassModifiers'] as List? ?? const [])
+          Modifier.fromJson((modifier as Map).cast<String, Object?>()),
+      ],
       chosenMode: RollMode.values.asNameMap()[json['chosenMode']],
     );
   }
@@ -81,7 +86,13 @@ class AttackEvent extends LogEvent {
   final String attackerName;
   final String targetName;
   final String attackName;
+
+  /// Armor class the attack had to reach, including
+  /// [armorClassModifiers].
   final int targetArmorClass;
+
+  /// Effects that changed the target's armor class, with their names.
+  final List<Modifier> armorClassModifiers;
   final RollRecord attackRoll;
   final bool hit;
 
@@ -133,6 +144,10 @@ class AttackEvent extends LogEvent {
     if (conditionEffects.isNotEmpty)
       'conditionEffects': [
         for (final effect in conditionEffects) effect.toJson(),
+      ],
+    if (armorClassModifiers.isNotEmpty)
+      'armorClassModifiers': [
+        for (final modifier in armorClassModifiers) modifier.toJson(),
       ],
     'chosenMode': chosenMode.name,
   };
@@ -411,8 +426,9 @@ class CombatantDiedEvent extends LogEvent {
   };
 }
 
-/// What happened to a condition in a [ConditionEvent].
-enum ConditionChange { added, removed, expired }
+/// What happened to a condition or effect in a [ConditionEvent] or
+/// [BuffEvent].
+enum EffectChange { added, removed, expired }
 
 /// A combatant got a condition, lost it, or its duration ran out.
 class ConditionEvent extends LogEvent {
@@ -428,8 +444,7 @@ class ConditionEvent extends LogEvent {
       name: json['name']! as String,
       condition: json['condition']! as String,
       change:
-          ConditionChange.values.asNameMap()[json['change']] ??
-          ConditionChange.added,
+          EffectChange.values.asNameMap()[json['change']] ?? EffectChange.added,
       rounds: json['rounds'] as int?,
     );
   }
@@ -440,7 +455,7 @@ class ConditionEvent extends LogEvent {
 
   /// Name of the `Condition` value, e.g. `poisoned`.
   final String condition;
-  final ConditionChange change;
+  final EffectChange change;
 
   /// Duration in rounds the condition was given with, if any.
   final int? rounds;
@@ -453,6 +468,60 @@ class ConditionEvent extends LogEvent {
     'name': name,
     'condition': condition,
     'change': change.name,
+    'rounds': ?rounds,
+  };
+}
+
+/// A combatant got an effect (buff or penalty), lost it, or its duration
+/// ran out.
+class BuffEvent extends LogEvent {
+  const BuffEvent({
+    required this.name,
+    required this.buff,
+    required this.change,
+    this.attackBonus,
+    this.armorClassBonus = 0,
+    this.rounds,
+  });
+
+  factory BuffEvent.fromJson(Map<String, Object?> json) {
+    return BuffEvent(
+      name: json['name']! as String,
+      buff: json['buff']! as String,
+      change:
+          EffectChange.values.asNameMap()[json['change']] ?? EffectChange.added,
+      attackBonus: json['attackBonus'] as String?,
+      armorClassBonus: json['armorClassBonus'] as int? ?? 0,
+      rounds: json['rounds'] as int?,
+    );
+  }
+
+  static const typeName = 'buff';
+
+  /// The combatant.
+  final String name;
+
+  /// Name of the effect, e.g. `Segen`.
+  final String buff;
+  final EffectChange change;
+
+  /// Bonus on attack rolls as text, e.g. `+1d4`; null if there is none.
+  final String? attackBonus;
+  final int armorClassBonus;
+
+  /// Duration in rounds the effect was given with, if any.
+  final int? rounds;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'buff': buff,
+    'change': change.name,
+    'attackBonus': ?attackBonus,
+    'armorClassBonus': armorClassBonus,
     'rounds': ?rounds,
   };
 }
