@@ -338,4 +338,139 @@ void main() {
       expect(restored.healing, isFalse);
     });
   });
+
+  group('Log-Zeilen für Todesrettungswürfe', () {
+    DeathSaveEvent save(int face, {int successes = 0, int failures = 0}) =>
+        DeathSaveEvent(
+          name: 'Aria',
+          roll: RollRecord(count: 1, sides: 20, rolls: [face]),
+          successes: successes,
+          failures: failures,
+        );
+
+    test('Ein Erfolg nennt Wurf und Stand', () {
+      expect(
+        formatter.format(save(14, successes: 2, failures: 1)).text,
+        'Todesrettungswurf von Aria: 14, Erfolg '
+        '(Erfolge 2, Fehlschläge 1)',
+      );
+    });
+
+    test('Ein Fehlschlag nennt Wurf und Stand', () {
+      expect(
+        formatter.format(save(7, failures: 1)).text,
+        'Todesrettungswurf von Aria: 7, Fehlschlag '
+        '(Erfolge 0, Fehlschläge 1)',
+      );
+    });
+
+    test('Eine natürliche 1 steht als zwei Fehlschläge da', () {
+      expect(
+        formatter.format(save(1, failures: 2)).text,
+        'Todesrettungswurf von Aria: 1, zwei Fehlschläge '
+        '(Erfolge 0, Fehlschläge 2)',
+      );
+    });
+
+    test('Eine natürliche 20 nennt die Rückkehr mit 1 Trefferpunkt', () {
+      expect(
+        formatter.format(save(20)).text,
+        'Todesrettungswurf von Aria: 20, Aria kommt mit 1 TP wieder zu sich',
+      );
+    });
+
+    test('Der Wurf ist antippbar und zeigt Würfel, Regel und Stand', () {
+      final event = save(14, successes: 2, failures: 1);
+      final tappable = formatter
+          .format(event)
+          .spans
+          .where((span) => span.hasDetails);
+
+      expect(tappable.single.text, '14');
+      expect(detailsOf(event), [
+        '1d20: 14',
+        'Summe: 14',
+        'Erfolg ab 10',
+        'Erfolge: 2 von 3',
+        'Fehlschläge: 1 von 3',
+      ]);
+    });
+
+    test('Schaden bei 0 Trefferpunkten nennt die Fehlschläge', () {
+      expect(
+        formatter
+            .format(
+              const DyingDamageEvent(
+                name: 'Aria',
+                failuresAdded: 1,
+                failures: 2,
+              ),
+            )
+            .text,
+        'Aria erleidet am Boden Schaden: 1 Fehlschlag bei den '
+        'Todesrettungswürfen (Fehlschläge 2)',
+      );
+      expect(
+        formatter
+            .format(
+              const DyingDamageEvent(
+                name: 'Aria',
+                failuresAdded: 2,
+                failures: 2,
+              ),
+            )
+            .text,
+        'Aria erleidet am Boden Schaden: 2 Fehlschläge bei den '
+        'Todesrettungswürfen (Fehlschläge 2)',
+      );
+    });
+
+    test('Stabil und Tod stehen als eigene Zeilen im Log', () {
+      expect(
+        formatter.format(const CombatantStableEvent('Aria')).text,
+        'Aria ist stabil',
+      );
+      expect(
+        formatter.format(const CombatantDiedEvent('Aria')).text,
+        'Aria stirbt',
+      );
+      expect(
+        formatter
+            .format(const CombatantDiedEvent('Aria', massiveDamage: true))
+            .text,
+        'Aria stirbt sofort (massiver Schaden)',
+      );
+    });
+
+    test('Die Ereignisse kommen nach dem Speichern und Laden (JSON) '
+        'unverändert zurück', () {
+      LogEvent roundTrip(LogEvent event) =>
+          LogEvent.fromJson(event.type, event.toJson());
+
+      final restored =
+          roundTrip(save(14, successes: 2, failures: 1)) as DeathSaveEvent;
+      expect(restored.name, 'Aria');
+      expect(restored.roll.total, 14);
+      expect(restored.successes, 2);
+      expect(restored.failures, 1);
+
+      final damage = roundTrip(
+        const DyingDamageEvent(name: 'Aria', failuresAdded: 2, failures: 3),
+      ) as DyingDamageEvent;
+      expect(damage.failuresAdded, 2);
+      expect(damage.failures, 3);
+
+      expect(
+        (roundTrip(
+          const CombatantStableEvent('Aria'),
+        ) as CombatantStableEvent).name,
+        'Aria',
+      );
+      final died = roundTrip(
+        const CombatantDiedEvent('Aria', massiveDamage: true),
+      ) as CombatantDiedEvent;
+      expect(died.name, 'Aria');
+      expect(died.massiveDamage, isTrue);
+    });
+  });
 }

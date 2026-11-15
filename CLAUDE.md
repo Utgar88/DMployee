@@ -46,6 +46,7 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Es gelten die 5e-Standardregeln. Sonderregeln und ein wählbares Regelset kommen später; keine Hausregeln einbauen.
 - Jeder Wurf muss auch von Hand eintragbar sein (am Tisch gewürfelt) und wird als `RollRecord` mit `manual: true` protokolliert.
 - Werte, die im Kampf wiederholt gebraucht werden, werden beim Kämpfer hinterlegt, nicht pro Aktion neu abgefragt.
+- Schaden immer über `Encounter._applyDamage` abziehen (Angriff und direkter Schaden nutzen dieselbe Stelle), damit die Regeln für 0 TP greifen: Monster gehen zu Boden, Spielercharaktere (`isPlayer`) machen Todesrettungswürfe.
 - Der Kampfstand wird nach jeder Änderung gespeichert (`EncounterStore`, Tabelle `encounter_state`). Änderungen am Kampf deshalb immer über Methoden von `Encounter` machen, nie direkt an `Combatant` aus dem Bildschirm heraus; neue Felder in `toJson`/`fromJson` aufnehmen.
 
 ## Datenbank

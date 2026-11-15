@@ -40,6 +40,22 @@ class LogFormatter {
       RoundEvent() => LogLine([LogSpan('Runde ${event.round} beginnt')]),
       CombatantDownEvent() => LogLine([LogSpan('${event.name} geht zu Boden')]),
       HpChangeEvent() => _hpChange(event),
+      DeathSaveEvent() => _deathSave(event),
+      DyingDamageEvent() => LogLine([
+        LogSpan(
+          '${event.name} erleidet am Boden Schaden: '
+          '${event.failuresAdded == 1 ? '1 Fehlschlag' : '${event.failuresAdded} Fehlschläge'} '
+          'bei den Todesrettungswürfen (Fehlschläge ${event.failures})',
+        ),
+      ]),
+      CombatantStableEvent() => LogLine([LogSpan('${event.name} ist stabil')]),
+      CombatantDiedEvent() => LogLine([
+        LogSpan(
+          event.massiveDamage
+              ? '${event.name} stirbt sofort (massiver Schaden)'
+              : '${event.name} stirbt',
+        ),
+      ]),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -114,6 +130,35 @@ class LogFormatter {
       LogSpan('${event.name} ${event.healing ? 'wird um' : 'erleidet'} '),
       LogSpan('${event.amount}', details: details),
       LogSpan('${event.healing ? ' TP geheilt' : ' Schaden'}$source'),
+    ]);
+  }
+
+  LogLine _deathSave(DeathSaveEvent event) {
+    final roll = event.roll;
+    final tally = '(Erfolge ${event.successes}, Fehlschläge ${event.failures})';
+    final String result;
+    if (roll.isNatural20) {
+      result = '${event.name} kommt mit 1 TP wieder zu sich';
+    } else if (roll.isNatural1) {
+      result = 'zwei Fehlschläge $tally';
+    } else if (roll.total >= 10) {
+      result = 'Erfolg $tally';
+    } else {
+      result = 'Fehlschlag $tally';
+    }
+
+    return LogLine([
+      LogSpan('Todesrettungswurf von ${event.name}: '),
+      LogSpan(
+        '${roll.total}',
+        details: [
+          ...rollDetails(roll),
+          'Erfolg ab 10',
+          'Erfolge: ${event.successes} von 3',
+          'Fehlschläge: ${event.failures} von 3',
+        ],
+      ),
+      LogSpan(', $result'),
     ]);
   }
 

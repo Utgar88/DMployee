@@ -24,6 +24,10 @@ sealed class LogEvent {
       RoundEvent.typeName => RoundEvent.fromJson(json),
       CombatantDownEvent.typeName => CombatantDownEvent.fromJson(json),
       HpChangeEvent.typeName => HpChangeEvent.fromJson(json),
+      DeathSaveEvent.typeName => DeathSaveEvent.fromJson(json),
+      DyingDamageEvent.typeName => DyingDamageEvent.fromJson(json),
+      CombatantStableEvent.typeName => CombatantStableEvent.fromJson(json),
+      CombatantDiedEvent.typeName => CombatantDiedEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

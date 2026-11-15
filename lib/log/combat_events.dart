@@ -205,3 +205,127 @@ class HpChangeEvent extends LogEvent {
     'source': ?source,
   };
 }
+
+/// A death saving throw of a player character at 0 hit points.
+class DeathSaveEvent extends LogEvent {
+  const DeathSaveEvent({
+    required this.name,
+    required this.roll,
+    required this.successes,
+    required this.failures,
+  });
+
+  factory DeathSaveEvent.fromJson(Map<String, Object?> json) {
+    return DeathSaveEvent(
+      name: json['name']! as String,
+      roll: _roll(json['roll']),
+      successes: json['successes']! as int,
+      failures: json['failures']! as int,
+    );
+  }
+
+  static const typeName = 'deathSave';
+
+  final String name;
+  final RollRecord roll;
+
+  /// Successes and failures after this roll, 0 to 3 each.
+  final int successes;
+  final int failures;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'roll': roll.toJson(),
+    'successes': successes,
+    'failures': failures,
+  };
+}
+
+/// A player character took damage at 0 hit points, which counts as failed
+/// death saving throws.
+class DyingDamageEvent extends LogEvent {
+  const DyingDamageEvent({
+    required this.name,
+    required this.failuresAdded,
+    required this.failures,
+  });
+
+  factory DyingDamageEvent.fromJson(Map<String, Object?> json) {
+    return DyingDamageEvent(
+      name: json['name']! as String,
+      failuresAdded: json['failuresAdded']! as int,
+      failures: json['failures']! as int,
+    );
+  }
+
+  static const typeName = 'dyingDamage';
+
+  final String name;
+
+  /// 1, or 2 for a critical hit.
+  final int failuresAdded;
+
+  /// Failures after this damage, at most 3.
+  final int failures;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'failuresAdded': failuresAdded,
+    'failures': failures,
+  };
+}
+
+/// A player character reached three successful death saving throws.
+class CombatantStableEvent extends LogEvent {
+  const CombatantStableEvent(this.name);
+
+  factory CombatantStableEvent.fromJson(Map<String, Object?> json) =>
+      CombatantStableEvent(json['name']! as String);
+
+  static const typeName = 'combatantStable';
+
+  final String name;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {'name': name};
+}
+
+/// A player character died.
+class CombatantDiedEvent extends LogEvent {
+  const CombatantDiedEvent(this.name, {this.massiveDamage = false});
+
+  factory CombatantDiedEvent.fromJson(Map<String, Object?> json) {
+    return CombatantDiedEvent(
+      json['name']! as String,
+      massiveDamage: json['massiveDamage'] as bool? ?? false,
+    );
+  }
+
+  static const typeName = 'combatantDied';
+
+  final String name;
+
+  /// Killed outright because the damage left over at 0 hit points reached
+  /// the hit point maximum, instead of by three failed death saving throws.
+  final bool massiveDamage;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'massiveDamage': massiveDamage,
+  };
+}

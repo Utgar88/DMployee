@@ -548,4 +548,171 @@ void main() {
       expect(restored.current!.name, 'Aria');
     });
   });
+
+  group('Kampf-Bildschirm: Todesrettungswürfe', () {
+    /// Aria is a player character at 0 hit points.
+    Scene dyingAria(List<int> faces) {
+      final scene = Scene(faces);
+      scene.aria
+        ..isPlayer = true
+        ..hp = 0;
+      return scene;
+    }
+
+    final saveButton = find.byKey(const Key('death-save-0'));
+
+    testWidgets('Beim Anlegen lässt sich ein Kämpfer als Spielercharakter '
+        'kennzeichnen', (tester) async {
+      final scene = Scene([], prepared: false);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-combatant');
+      await type(tester, 'combatant-name', 'Aria');
+      await type(tester, 'combatant-ac', '16');
+      await type(tester, 'combatant-hp', '20');
+      await tapKey(tester, 'combatant-player');
+      await tapKey(tester, 'combatant-save');
+
+      expect(scene.encounter.combatants.single.isPlayer, isTrue);
+    });
+
+    testWidgets('Ohne Kennzeichnung ist ein neuer Kämpfer kein '
+        'Spielercharakter', (tester) async {
+      final scene = Scene([], prepared: false);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-combatant');
+      await type(tester, 'combatant-name', 'Goblin');
+      await type(tester, 'combatant-ac', '13');
+      await type(tester, 'combatant-hp', '7');
+      await tapKey(tester, 'combatant-save');
+
+      expect(scene.encounter.combatants.single.isPlayer, isFalse);
+    });
+
+    testWidgets('Ein sterbender Spielercharakter zeigt den Stand der '
+        'Todesrettungswürfe und einen Knopf für den Wurf', (tester) async {
+      await dyingAria([]).pump(tester);
+
+      expect(
+        textOf(tester, 'death-saves-0'),
+        'Todesrettungswürfe: Erfolge 0 · Fehlschläge 0',
+      );
+      expect(saveButton, findsOneWidget);
+    });
+
+    testWidgets('Ein Monster am Boden und ein Charakter mit Trefferpunkten '
+        'haben keinen Knopf für den Todesrettungswurf', (tester) async {
+      final scene = Scene([]);
+      scene.aria.isPlayer = true;
+      scene.goblin.hp = 0;
+      await scene.pump(tester);
+
+      expect(saveButton, findsNothing);
+      expect(find.byKey(const Key('death-save-1')), findsNothing);
+    });
+
+    testWidgets('Der Wurf wird gewürfelt, gezählt und angezeigt', (
+      tester,
+    ) async {
+      final scene = dyingAria([12]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'death-save-0');
+      await tapKey(tester, 'death-save-confirm');
+
+      expect(
+        textOf(tester, 'death-saves-0'),
+        'Todesrettungswürfe: Erfolge 1 · Fehlschläge 0',
+      );
+      expect(
+        textOf(tester, 'last-action'),
+        'Todesrettungswurf von Aria: 12, Erfolg (Erfolge 1, Fehlschläge 0)',
+      );
+    });
+
+    testWidgets('Ein am Tisch gewürfelter Wurf lässt sich von Hand '
+        'eintragen', (tester) async {
+      final scene = dyingAria([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'death-save-0');
+      await type(tester, 'manual-death-save', '6');
+      await tapKey(tester, 'death-save-confirm');
+
+      final event = (await scene.events()).single as DeathSaveEvent;
+      expect(event.roll.manual, isTrue);
+      expect(scene.aria.deathSaveFailures, 1);
+    });
+
+    testWidgets('Ein unmöglicher eingetragener Wurf wird abgelehnt: das '
+        'Fenster bleibt offen und nichts ändert sich', (tester) async {
+      final scene = dyingAria([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'death-save-0');
+      await type(tester, 'manual-death-save', '30');
+      await tapKey(tester, 'death-save-confirm');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(await scene.events(), isEmpty);
+    });
+
+    testWidgets('Nach drei Erfolgen ist der Charakter als "stabil" markiert '
+        'und der Knopf verschwindet', (tester) async {
+      final scene = dyingAria([10, 10, 10]);
+      await scene.pump(tester);
+
+      for (var i = 0; i < 3; i++) {
+        await tapKey(tester, 'death-save-0');
+        await tapKey(tester, 'death-save-confirm');
+      }
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('combatant-0')),
+          matching: find.text('stabil'),
+        ),
+        findsOneWidget,
+      );
+      expect(saveButton, findsNothing);
+    });
+
+    testWidgets('Nach drei Fehlschlägen ist der Charakter als "tot" '
+        'markiert und der Knopf verschwindet', (tester) async {
+      final scene = dyingAria([2, 2, 2]);
+      await scene.pump(tester);
+
+      for (var i = 0; i < 3; i++) {
+        await tapKey(tester, 'death-save-0');
+        await tapKey(tester, 'death-save-confirm');
+      }
+
+      final card = find.byKey(const Key('combatant-0'));
+      expect(
+        find.descendant(of: card, matching: find.text('tot')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text('am Boden')),
+        findsNothing,
+      );
+      expect(saveButton, findsNothing);
+    });
+
+    testWidgets('Heilung für einen toten Charakter wird mit einer Meldung '
+        'abgelehnt', (tester) async {
+      final scene = dyingAria([]);
+      scene.aria.isDead = true;
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await type(tester, 'hp-amount', '5');
+      await tapKey(tester, 'hp-heal');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.hp, 0);
+      expect(await scene.events(), isEmpty);
+    });
+  });
 }

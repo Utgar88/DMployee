@@ -103,6 +103,16 @@ class _CombatScreenState extends State<CombatScreen> {
     setState(() => _lastAction = widget.formatter.format(event).text);
   }
 
+  Future<void> _deathSave(Combatant combatant) async {
+    final event = await showDialog<DeathSaveEvent>(
+      context: context,
+      builder: (context) =>
+          _DeathSaveDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (event == null || !mounted) return;
+    setState(() => _lastAction = widget.formatter.format(event).text);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -209,7 +219,11 @@ class _CombatScreenState extends State<CombatScreen> {
                   ),
                 ),
                 if (isCurrent) const _Badge('am Zug'),
-                if (combatant.isDown) const _Badge('am Boden'),
+                if (combatant.isDead)
+                  const _Badge('tot')
+                else if (combatant.isDown)
+                  const _Badge('am Boden'),
+                if (combatant.isStable) const _Badge('stabil'),
                 if (!running)
                   IconButton(
                     key: Key('remove-$index'),
@@ -241,6 +255,27 @@ class _CombatScreenState extends State<CombatScreen> {
                 ),
               ],
             ),
+            if (combatant.isDying)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Todesrettungswürfe: '
+                      'Erfolge ${combatant.deathSaveSuccesses} · '
+                      'Fehlschläge ${combatant.deathSaveFailures}',
+                      key: Key('death-saves-$index'),
+                    ),
+                  ),
+                  FilledButton.tonal(
+                    key: Key('death-save-$index'),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _deathSave(combatant),
+                    child: const Text('Todesrettungswurf'),
+                  ),
+                ],
+              ),
             if (combatant.initiative != null)
               Text(
                 'Initiative ${combatant.initiative}',
@@ -399,6 +434,7 @@ class _CombatantDialogState extends State<_CombatantDialog> {
   final _hp = TextEditingController();
   final _initiative = TextEditingController();
   final _attack = _AttackFields();
+  bool _isPlayer = false;
   String? _errorText;
 
   @override
@@ -440,6 +476,7 @@ class _CombatantDialogState extends State<_CombatantDialog> {
       armorClass: armorClass,
       maxHp: hp,
       initiativeBonus: int.tryParse(_initiative.text) ?? 0,
+      isPlayer: _isPlayer,
       attacks: [?attack],
     );
     Navigator.pop(context, true);
@@ -475,6 +512,15 @@ class _CombatantDialogState extends State<_CombatantDialog> {
               _initiative,
               formatters: _signedDigits,
               number: true,
+            ),
+            SwitchListTile(
+              key: const Key('combatant-player'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Spielercharakter'),
+              subtitle: const Text('Macht bei 0 TP Todesrettungswürfe'),
+              value: _isPlayer,
+              onChanged: (value) => setState(() => _isPlayer = value),
             ),
             const SizedBox(height: 8),
             Text(
@@ -806,6 +852,12 @@ class _HpDialogState extends State<_HpDialog> {
       setState(() => _errorText = 'Bitte einen Betrag ab 1 eintragen.');
       return;
     }
+    if (healing && widget.combatant.isDead) {
+      setState(
+        () => _errorText = 'Ein toter Charakter lässt sich nicht heilen.',
+      );
+      return;
+    }
     final encounter = widget.encounter;
     final event = healing
         ? await encounter.heal(widget.combatant, amount, source: _source.text)
@@ -869,6 +921,82 @@ class _HpDialogState extends State<_HpDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Abbrechen'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Death saving throw: rolled by the app or typed in from the table.
+class _DeathSaveDialog extends StatefulWidget {
+  const _DeathSaveDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_DeathSaveDialog> createState() => _DeathSaveDialogState();
+}
+
+class _DeathSaveDialogState extends State<_DeathSaveDialog> {
+  final _manual = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _manual.dispose();
+    super.dispose();
+  }
+
+  Future<void> _roll() async {
+    try {
+      final event = await widget.encounter.rollDeathSave(
+        widget.combatant,
+        manualRoll: int.tryParse(_manual.text),
+      );
+      if (mounted) Navigator.pop(context, event);
+    } on ArgumentError {
+      setState(() => _errorText = 'Ein d20 zeigt 1 bis 20.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final combatant = widget.combatant;
+
+    return AlertDialog(
+      title: Text('Todesrettungswurf: ${combatant.name}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Erfolge ${combatant.deathSaveSuccesses} · '
+              'Fehlschläge ${combatant.deathSaveFailures}',
+            ),
+            const SizedBox(height: 8),
+            _field(
+              'manual-death-save',
+              'Am Tisch gewürfelt? (d20, optional)',
+              _manual,
+              helper: 'Leer lassen, dann würfelt die App',
+              formatters: _digits,
+              number: true,
+            ),
+            if (_errorText != null) _error(context, _errorText!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          key: const Key('death-save-confirm'),
+          onPressed: _roll,
+          child: const Text('Würfeln'),
         ),
       ],
     );

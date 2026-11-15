@@ -8,6 +8,7 @@ class Combatant {
     required this.armorClass,
     required this.maxHp,
     this.initiativeBonus = 0,
+    this.isPlayer = false,
     List<Attack> attacks = const [],
   }) : hp = maxHp,
        attacks = List.of(attacks);
@@ -19,13 +20,19 @@ class Combatant {
         armorClass: json['armorClass']! as int,
         maxHp: json['maxHp']! as int,
         initiativeBonus: json['initiativeBonus']! as int,
+        isPlayer: json['isPlayer'] as bool? ?? false,
         attacks: [
           for (final attack in json['attacks']! as List)
             Attack.fromJson((attack as Map).cast<String, Object?>()),
         ],
       )
       ..hp = json['hp']! as int
-      ..initiative = json['initiative'] as int?;
+      ..initiative = json['initiative'] as int?
+      // Missing in states saved before death saving throws existed.
+      ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
+      ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
+      ..isStable = json['isStable'] as bool? ?? false
+      ..isDead = json['isDead'] as bool? ?? false;
   }
 
   String name;
@@ -40,8 +47,29 @@ class Combatant {
   /// Initiative total of the running combat; null while no combat runs.
   int? initiative;
 
-  /// At 0 hit points a combatant no longer takes turns.
+  /// Player characters make death saving throws at 0 hit points; everyone
+  /// else is simply out of the fight.
+  bool isPlayer;
+
+  /// Death saving throws so far, 0 to 3 each. Reset when the combatant
+  /// regains hit points or becomes stable.
+  int deathSaveSuccesses = 0;
+  int deathSaveFailures = 0;
+
+  /// At 0 hit points but no longer dying; ends when damage is taken.
+  bool isStable = false;
+  bool isDead = false;
+
+  /// At 0 hit points.
   bool get isDown => hp <= 0;
+
+  /// A player character at 0 hit points who still has to make death saving
+  /// throws.
+  bool get isDying => isPlayer && isDown && !isStable && !isDead;
+
+  /// Whether the combatant gets a turn: everyone standing, plus dying
+  /// player characters so they can roll their death saving throw.
+  bool get takesTurns => !isDown || isDying;
 
   Map<String, Object?> toJson() => {
     'name': name,
@@ -49,6 +77,11 @@ class Combatant {
     'maxHp': maxHp,
     'hp': hp,
     'initiativeBonus': initiativeBonus,
+    'isPlayer': isPlayer,
+    'deathSaveSuccesses': deathSaveSuccesses,
+    'deathSaveFailures': deathSaveFailures,
+    'isStable': isStable,
+    'isDead': isDead,
     'initiative': initiative,
     'attacks': [for (final attack in attacks) attack.toJson()],
   };

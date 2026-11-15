@@ -84,6 +84,7 @@ class Encounter {
     required int armorClass,
     required int maxHp,
     int initiativeBonus = 0,
+    bool isPlayer = false,
     List<Attack> attacks = const [],
   }) {
     final combatant = Combatant(
@@ -91,6 +92,7 @@ class Encounter {
       armorClass: armorClass,
       maxHp: maxHp,
       initiativeBonus: initiativeBonus,
+      isPlayer: isPlayer,
       attacks: attacks,
     );
     _combatants.add(combatant);
@@ -194,7 +196,7 @@ class Encounter {
     });
 
     _round = 1;
-    _current = _combatants.where((c) => !c.isDown).firstOrNull;
+    _current = _combatants.where((c) => c.takesTurns).firstOrNull;
 
     await _log.add(
       InitiativeEvent([
@@ -206,10 +208,11 @@ class Encounter {
     await _save();
   }
 
-  /// Passes the turn to the next combatant who is still standing. After the
-  /// last one a new round begins.
+  /// Passes the turn to the next combatant who still takes turns: everyone
+  /// standing and dying player characters. After the last one a new round
+  /// begins.
   Future<void> nextTurn() async {
-    if (!isRunning || _combatants.every((c) => c.isDown)) return;
+    if (!isRunning || _combatants.every((c) => !c.takesTurns)) return;
 
     var index = _current == null ? -1 : _combatants.indexOf(_current!);
     var newRound = false;
@@ -219,7 +222,7 @@ class Encounter {
         index = 0;
         newRound = true;
       }
-    } while (_combatants[index].isDown);
+    } while (!_combatants[index].takesTurns);
 
     _current = _combatants[index];
     if (newRound) {
@@ -281,7 +284,7 @@ class Encounter {
 
     // Everything is rolled and validated; only now change state and log.
     final wasDown = target.isDown;
-    target.hp = damage >= target.hp ? 0 : target.hp - damage;
+    final consequences = _applyDamage(target, damage, critical: critical);
     final targetDown = !wasDown && target.isDown;
 
     await _log.add(
@@ -298,8 +301,8 @@ class Encounter {
         damage: damage,
       ),
     );
-    if (targetDown) {
-      await _log.add(CombatantDownEvent(target.name));
+    for (final event in consequences) {
+      await _log.add(event);
     }
     await _save();
 
@@ -324,9 +327,11 @@ class Encounter {
   }) => _changeHp(target, amount, healing: false, source: source);
 
   /// Heals [target] by [amount]. Hit points never rise above the maximum; a
-  /// combatant at 0 hit points is back on their feet.
+  /// combatant at 0 hit points is back on their feet and their death saving
+  /// throws are reset.
   ///
-  /// An [amount] below 1 throws an [ArgumentError] and changes nothing.
+  /// An [amount] below 1 throws an [ArgumentError], a dead [target] a
+  /// [StateError]; both change nothing.
   Future<HpChangeEvent> heal(Combatant target, int amount, {String? source}) =>
       _changeHp(target, amount, healing: true, source: source);
 
@@ -340,11 +345,23 @@ class Encounter {
       throw ArgumentError.value(amount, 'amount', 'must be at least 1');
     }
 
+    if (healing && target.isDead) {
+      throw StateError('${target.name} is dead and cannot be healed');
+    }
+
     final hpBefore = target.hp;
-    final wasDown = target.isDown;
-    target.hp = healing
-        ? (hpBefore + amount > target.maxHp ? target.maxHp : hpBefore + amount)
-        : (amount >= hpBefore ? 0 : hpBefore - amount);
+    var consequences = const <LogEvent>[];
+    if (healing) {
+      target
+        ..hp = hpBefore + amount > target.maxHp
+            ? target.maxHp
+            : hpBefore + amount
+        ..isStable = false
+        ..deathSaveSuccesses = 0
+        ..deathSaveFailures = 0;
+    } else {
+      consequences = _applyDamage(target, amount);
+    }
 
     final trimmed = source?.trim();
     final event = HpChangeEvent(
@@ -357,9 +374,115 @@ class Encounter {
       source: trimmed == null || trimmed.isEmpty ? null : trimmed,
     );
     await _log.add(event);
-    if (!wasDown && target.isDown) {
-      await _log.add(CombatantDownEvent(target.name));
+    for (final consequence in consequences) {
+      await _log.add(consequence);
     }
+    await _save();
+    return event;
+  }
+
+  /// Subtracts [damage] from [target]'s hit points and returns what follows
+  /// from it, to be logged after the damage itself.
+  ///
+  /// Monsters simply go down at 0. For player characters the death rules
+  /// apply: damage at 0 hit points is a failed death saving throw (two for
+  /// a [critical] hit), and damage left over at 0 that reaches the hit
+  /// point maximum kills outright.
+  List<LogEvent> _applyDamage(
+    Combatant target,
+    int damage, {
+    bool critical = false,
+  }) {
+    if (damage <= 0 || target.isDead) return const [];
+
+    final hpBefore = target.hp;
+    target.hp = damage >= hpBefore ? 0 : hpBefore - damage;
+    if (target.hp > 0) return const [];
+
+    if (!target.isPlayer) {
+      return [if (hpBefore > 0) CombatantDownEvent(target.name)];
+    }
+
+    if (damage - hpBefore >= target.maxHp) {
+      target
+        ..isDead = true
+        ..isStable = false;
+      return [CombatantDiedEvent(target.name, massiveDamage: true)];
+    }
+    if (hpBefore > 0) return [CombatantDownEvent(target.name)];
+
+    final added = critical ? 2 : 1;
+    final failures = target.deathSaveFailures + added;
+    target
+      ..isStable = false
+      ..deathSaveFailures = failures > 3 ? 3 : failures;
+    return [
+      DyingDamageEvent(
+        name: target.name,
+        failuresAdded: added,
+        failures: target.deathSaveFailures,
+      ),
+      if (_diesFromFailures(target)) CombatantDiedEvent(target.name),
+    ];
+  }
+
+  /// Marks [combatant] as dead once the third death saving throw failed.
+  bool _diesFromFailures(Combatant combatant) {
+    if (combatant.deathSaveFailures < 3) return false;
+    combatant.isDead = true;
+    return true;
+  }
+
+  /// Death saving throw of a dying player character: a d20 without
+  /// modifiers. 10 or more is a success, less a failure; a natural 1 counts
+  /// as two failures, a natural 20 brings the character back with 1 hit
+  /// point. Three successes make the character stable, three failures kill.
+  ///
+  /// [manualRoll] is the d20 rolled at the table. A value outside 1 to 20
+  /// throws an [ArgumentError], a [combatant] who is not dying a
+  /// [StateError]; both change nothing.
+  Future<DeathSaveEvent> rollDeathSave(
+    Combatant combatant, {
+    int? manualRoll,
+  }) async {
+    if (!combatant.isDying) {
+      throw StateError('${combatant.name} is not dying');
+    }
+    final roll = manualRoll != null
+        ? RollRecord.manualD20(manualRoll)
+        : RollRecord.fromD20(_roller.rollD20());
+
+    LogEvent? consequence;
+    if (roll.isNatural20) {
+      combatant
+        ..hp = 1
+        ..deathSaveSuccesses = 0
+        ..deathSaveFailures = 0;
+    } else if (roll.total >= 10) {
+      combatant.deathSaveSuccesses++;
+    } else {
+      final failures = combatant.deathSaveFailures + (roll.isNatural1 ? 2 : 1);
+      combatant.deathSaveFailures = failures > 3 ? 3 : failures;
+    }
+    final event = DeathSaveEvent(
+      name: combatant.name,
+      roll: roll,
+      successes: combatant.deathSaveSuccesses,
+      failures: combatant.deathSaveFailures,
+    );
+
+    if (_diesFromFailures(combatant)) {
+      consequence = CombatantDiedEvent(combatant.name);
+    } else if (combatant.deathSaveSuccesses >= 3) {
+      combatant
+        ..isStable = true
+        ..deathSaveSuccesses = 0
+        ..deathSaveFailures = 0;
+      consequence = CombatantStableEvent(combatant.name);
+    }
+
+    await _log.add(event);
+    if (consequence != null) await _log.add(consequence);
     await _save();
     return event;
   }
