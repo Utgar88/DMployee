@@ -96,6 +96,7 @@ class AttackEvent extends LogEvent {
     this.damage = 0,
     this.damageEffect,
     this.extraDamage = const [],
+    this.tempHpAbsorbed = 0,
     this.conditionEffects = const [],
     this.armorClassModifiers = const [],
     this._chosenMode,
@@ -118,6 +119,7 @@ class AttackEvent extends LogEvent {
         for (final extra in json['extraDamage'] as List? ?? const [])
           ExtraDamage.fromJson((extra as Map).cast<String, Object?>()),
       ],
+      tempHpAbsorbed: json['tempHpAbsorbed'] as int? ?? 0,
       conditionEffects: [
         for (final effect in json['conditionEffects'] as List? ?? const [])
           ConditionEffect.fromJson((effect as Map).cast<String, Object?>()),
@@ -160,6 +162,9 @@ class AttackEvent extends LogEvent {
   /// none.
   final List<ExtraDamage> extraDamage;
 
+  /// Part of [damage] taken by the target's temporary hit points.
+  final int tempHpAbsorbed;
+
   /// Resistance, vulnerability or immunity of the target against
   /// [damageType]; null if the rolled damage counted as it was.
   final DamageEffect? damageEffect;
@@ -198,6 +203,7 @@ class AttackEvent extends LogEvent {
     'damageEffect': ?damageEffect?.name,
     if (extraDamage.isNotEmpty)
       'extraDamage': [for (final extra in extraDamage) extra.toJson()],
+    if (tempHpAbsorbed > 0) 'tempHpAbsorbed': tempHpAbsorbed,
     if (conditionEffects.isNotEmpty)
       'conditionEffects': [
         for (final effect in conditionEffects) effect.toJson(),
@@ -297,6 +303,8 @@ class HpChangeEvent extends LogEvent {
     this.source,
     this.damageType,
     this.damageEffect,
+    this.tempHpBefore = 0,
+    this.tempHpAfter = 0,
   });
 
   factory HpChangeEvent.fromJson(Map<String, Object?> json) {
@@ -310,6 +318,8 @@ class HpChangeEvent extends LogEvent {
       source: json['source'] as String?,
       damageType: json['damageType'] as String?,
       damageEffect: DamageEffect.fromName(json['damageEffect']),
+      tempHpBefore: json['tempHpBefore'] as int? ?? 0,
+      tempHpAfter: json['tempHpAfter'] as int? ?? 0,
     );
   }
 
@@ -339,6 +349,10 @@ class HpChangeEvent extends LogEvent {
   /// Where the change came from, e.g. "Feuerball"; optional.
   final String? source;
 
+  /// Temporary hit points before and after; they take damage first.
+  final int tempHpBefore;
+  final int tempHpAfter;
+
   /// The part of [amount] that actually changed the hit points.
   int get effective => (hpAfter - hpBefore).abs();
 
@@ -356,6 +370,10 @@ class HpChangeEvent extends LogEvent {
     'source': ?source,
     'damageType': ?damageType,
     'damageEffect': ?damageEffect?.name,
+    if (tempHpBefore != tempHpAfter) ...{
+      'tempHpBefore': tempHpBefore,
+      'tempHpAfter': tempHpAfter,
+    },
   };
 }
 
@@ -597,5 +615,54 @@ class BuffEvent extends LogEvent {
     'damageType': ?damageType,
     'saveBonus': ?saveBonus,
     'rounds': ?rounds,
+  };
+}
+
+/// A combatant gained temporary hit points, kept higher ones they already
+/// had, or lost them.
+class TempHpEvent extends LogEvent {
+  const TempHpEvent({
+    required this.name,
+    required this.amount,
+    required this.tempHpBefore,
+    required this.tempHpAfter,
+    this.source,
+  });
+
+  factory TempHpEvent.fromJson(Map<String, Object?> json) {
+    return TempHpEvent(
+      name: json['name']! as String,
+      amount: json['amount']! as int,
+      tempHpBefore: json['tempHpBefore']! as int,
+      tempHpAfter: json['tempHpAfter']! as int,
+      source: json['source'] as String?,
+    );
+  }
+
+  static const typeName = 'tempHp';
+
+  final String name;
+
+  /// Temporary hit points granted; 0 when they were removed.
+  final int amount;
+  final int tempHpBefore;
+  final int tempHpAfter;
+
+  /// Where they came from, e.g. "Falsches Leben"; optional.
+  final String? source;
+
+  /// The new amount was not higher, so the combatant kept what they had.
+  bool get kept => amount > 0 && tempHpAfter != amount;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'amount': amount,
+    'tempHpBefore': tempHpBefore,
+    'tempHpAfter': tempHpAfter,
+    'source': ?source,
   };
 }

@@ -200,6 +200,52 @@ class Encounter {
     unawaited(_save());
   }
 
+  /// Gives [combatant] [amount] temporary hit points. They do not stack: the
+  /// combatant keeps whichever is higher, the new or the current amount.
+  /// Temporary hit points take damage first; healing does not restore them
+  /// and they do not bring a combatant at 0 hit points back.
+  ///
+  /// An [amount] below 1 throws an [ArgumentError] and changes nothing.
+  Future<TempHpEvent> grantTempHp(
+    Combatant combatant,
+    int amount, {
+    String? source,
+  }) async {
+    if (amount < 1) {
+      throw ArgumentError.value(amount, 'amount', 'must be at least 1');
+    }
+    final before = combatant.tempHp;
+    if (amount > before) combatant.tempHp = amount;
+    final trimmed = source?.trim();
+    final event = TempHpEvent(
+      name: combatant.name,
+      amount: amount,
+      tempHpBefore: before,
+      tempHpAfter: combatant.tempHp,
+      source: trimmed == null || trimmed.isEmpty ? null : trimmed,
+    );
+    await _log.add(event);
+    await _save();
+    return event;
+  }
+
+  /// Takes all temporary hit points from [combatant]; does nothing and
+  /// returns null if they have none.
+  Future<TempHpEvent?> removeTempHp(Combatant combatant) async {
+    final before = combatant.tempHp;
+    if (before == 0) return null;
+    combatant.tempHp = 0;
+    final event = TempHpEvent(
+      name: combatant.name,
+      amount: 0,
+      tempHpBefore: before,
+      tempHpAfter: 0,
+    );
+    await _log.add(event);
+    await _save();
+    return event;
+  }
+
   /// Gives [combatant] a [condition], optionally for a number of [rounds]
   /// (see [nextTurn]). A condition the combatant already has only gets its
   /// duration replaced.
@@ -613,6 +659,7 @@ class Encounter {
 
     // Everything is rolled and validated; only now change state and log.
     final wasDown = target.isDown;
+    final tempHpBefore = target.tempHp;
     final consequences = _applyDamage(target, damage, critical: critical);
     final targetDown = !wasDown && target.isDown;
 
@@ -630,6 +677,7 @@ class Encounter {
       damage: damage,
       damageEffect: damageEffect,
       extraDamage: extraDamage,
+      tempHpAbsorbed: tempHpBefore - target.tempHp,
       conditionEffects: conditionEffects,
       chosenMode: mode,
     );
@@ -698,6 +746,7 @@ class Encounter {
     final damageEffect = healing ? null : target.damageEffectFor(knownType);
 
     final hpBefore = target.hp;
+    final tempHpBefore = target.tempHp;
     var consequences = const <LogEvent>[];
     if (healing) {
       target
@@ -722,6 +771,8 @@ class Encounter {
       source: trimmed == null || trimmed.isEmpty ? null : trimmed,
       damageType: healing ? null : knownType,
       damageEffect: damageEffect,
+      tempHpBefore: tempHpBefore,
+      tempHpAfter: target.tempHp,
     );
     await _log.add(event);
     for (final consequence in consequences) {
@@ -734,16 +785,24 @@ class Encounter {
   /// Subtracts [damage] from [target]'s hit points and returns what follows
   /// from it, to be logged after the damage itself.
   ///
+  /// Temporary hit points take the damage first; only what is left reaches
+  /// the hit points.
+  ///
   /// Monsters simply go down at 0. For player characters the death rules
   /// apply: damage at 0 hit points is a failed death saving throw (two for
   /// a [critical] hit), and damage left over at 0 that reaches the hit
   /// point maximum kills outright.
   List<LogEvent> _applyDamage(
     Combatant target,
-    int damage, {
+    int incoming, {
     bool critical = false,
   }) {
-    if (damage <= 0 || target.isDead) return const [];
+    if (incoming <= 0 || target.isDead) return const [];
+
+    final absorbed = incoming < target.tempHp ? incoming : target.tempHp;
+    target.tempHp -= absorbed;
+    final damage = incoming - absorbed;
+    if (damage == 0) return const [];
 
     final hpBefore = target.hp;
     target.hp = damage >= hpBefore ? 0 : hpBefore - damage;

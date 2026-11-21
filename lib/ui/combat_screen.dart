@@ -92,7 +92,7 @@ class _CombatScreenState extends State<CombatScreen> {
   }
 
   Future<void> _changeHp(Combatant combatant) async {
-    final event = await showDialog<HpChangeEvent>(
+    final event = await showDialog<LogEvent>(
       context: context,
       builder: (context) =>
           _HpDialog(encounter: _encounter, combatant: combatant),
@@ -307,7 +307,7 @@ class _CombatScreenState extends State<CombatScreen> {
                 Expanded(
                   child: Text(
                     'RK ${_armorClassText(combatant)} · '
-                    'TP ${combatant.hp}/${combatant.maxHp}',
+                    '${_hpText(combatant)}',
                     key: Key('stats-$index'),
                   ),
                 ),
@@ -1141,7 +1141,13 @@ class _TargetDialogState extends State<_TargetDialog> {
   }
 }
 
-/// Damage or healing for one combatant without an attack.
+/// `TP 18/20`, with temporary hit points `TP 18/20 (+8 temporär)`.
+String _hpText(Combatant combatant) =>
+    'TP ${combatant.hp}/${combatant.maxHp}'
+    '${combatant.tempHp > 0 ? ' (+${combatant.tempHp} temporär)' : ''}';
+
+/// Damage, healing or temporary hit points for one combatant without an
+/// attack.
 class _HpDialog extends StatefulWidget {
   const _HpDialog({required this.encounter, required this.combatant});
 
@@ -1164,6 +1170,25 @@ class _HpDialogState extends State<_HpDialog> {
     _source.dispose();
     _damageType.dispose();
     super.dispose();
+  }
+
+  Future<void> _grantTempHp() async {
+    final amount = int.tryParse(_amount.text);
+    if (amount == null || amount < 1) {
+      setState(() => _errorText = 'Bitte einen Betrag ab 1 eintragen.');
+      return;
+    }
+    final event = await widget.encounter.grantTempHp(
+      widget.combatant,
+      amount,
+      source: _source.text,
+    );
+    if (mounted) Navigator.pop(context, event);
+  }
+
+  Future<void> _removeTempHp() async {
+    final event = await widget.encounter.removeTempHp(widget.combatant);
+    if (mounted) Navigator.pop(context, event);
   }
 
   Future<void> _apply({required bool healing}) async {
@@ -1195,7 +1220,7 @@ class _HpDialogState extends State<_HpDialog> {
     final combatant = widget.combatant;
 
     return AlertDialog(
-      title: Text('${combatant.name}: TP ${combatant.hp}/${combatant.maxHp}'),
+      title: Text('${combatant.name}: ${_hpText(combatant)}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1241,6 +1266,25 @@ class _HpDialogState extends State<_HpDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                key: const Key('hp-temp'),
+                onPressed: _grantTempHp,
+                child: const Text('Temporäre TP'),
+              ),
+            ),
+            Text(
+              'Temporäre TP addieren sich nicht; der höhere Wert zählt.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (combatant.tempHp > 0)
+              TextButton(
+                key: const Key('hp-temp-remove'),
+                onPressed: _removeTempHp,
+                child: Text('${combatant.tempHp} temporäre TP entfernen'),
+              ),
           ],
         ),
       ),

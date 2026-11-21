@@ -30,6 +30,7 @@ class Combatant {
         ],
       )
       ..hp = json['hp']! as int
+      ..tempHp = json['tempHp'] as int? ?? 0
       ..initiative = json['initiative'] as int?
       // Missing in states saved before death saving throws existed.
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
@@ -57,6 +58,10 @@ class Combatant {
 
   /// Current hit points, between 0 and [maxHp].
   int hp;
+
+  /// Temporary hit points: a buffer that takes damage before [hp]. Change
+  /// them through `Encounter.grantTempHp` and `removeTempHp`.
+  int tempHp = 0;
   int initiativeBonus;
   final List<Attack> attacks;
 
@@ -127,6 +132,7 @@ class Combatant {
     'armorClass': armorClass,
     'maxHp': maxHp,
     'hp': hp,
+    'tempHp': tempHp,
     'initiativeBonus': initiativeBonus,
     'isPlayer': isPlayer,
     'deathSaveSuccesses': deathSaveSuccesses,

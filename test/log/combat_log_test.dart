@@ -1011,4 +1011,111 @@ void main() {
       expect(restored.saveBonus, '+1');
     });
   });
+
+  group('Log-Zeilen für temporäre Trefferpunkte', () {
+    TempHpEvent temp(int amount, int before, int after, {String? source}) =>
+        TempHpEvent(
+          name: 'Aria',
+          amount: amount,
+          tempHpBefore: before,
+          tempHpAfter: after,
+          source: source,
+        );
+
+    test('Vergebene temporäre Trefferpunkte nennen Betrag und Quelle', () {
+      expect(
+        formatter.format(temp(8, 0, 8, source: 'Falsches Leben')).text,
+        'Aria erhält 8 temporäre TP (Falsches Leben)',
+      );
+    });
+
+    test('Behaltene höhere temporäre Trefferpunkte sind erkennbar', () {
+      expect(
+        formatter.format(temp(5, 8, 8)).text,
+        'Aria behält 8 temporäre TP statt 5',
+      );
+    });
+
+    test('Entfernte temporäre Trefferpunkte nennen den verlorenen '
+        'Betrag', () {
+      expect(
+        formatter.format(temp(0, 8, 0)).text,
+        'Aria verliert 8 temporäre TP',
+      );
+    });
+
+    test('Temporäre Trefferpunkte kommen nach dem Speichern und Laden '
+        '(JSON) unverändert zurück', () {
+      final original = temp(8, 3, 8, source: 'Falsches Leben');
+      final restored =
+          LogEvent.fromJson(original.type, original.toJson()) as TempHpEvent;
+
+      expect(restored.name, 'Aria');
+      expect(restored.amount, 8);
+      expect(restored.tempHpBefore, 3);
+      expect(restored.tempHpAfter, 8);
+      expect(restored.source, 'Falsches Leben');
+    });
+
+    test('Die Details von direktem Schaden zeigen die abgefangenen '
+        'temporären Trefferpunkte', () {
+      const event = HpChangeEvent(
+        name: 'Aria',
+        amount: 12,
+        healing: false,
+        hpBefore: 20,
+        hpAfter: 16,
+        maxHp: 20,
+        tempHpBefore: 8,
+        tempHpAfter: 0,
+      );
+
+      expect(
+        detailsOf(event),
+        containsAllInOrder([
+          'Temporäre TP: 8 → 0',
+          'Trefferpunkte: 20 → 16 (Maximum 20)',
+        ]),
+      );
+      // Nothing was lost: 8 went to the temporary hit points, 4 to the
+      // hit points.
+      expect(
+        detailsOf(event).where((l) => l.startsWith('Davon wirksam')),
+        isEmpty,
+      );
+      final restored =
+          LogEvent.fromJson(event.type, event.toJson()) as HpChangeEvent;
+      expect(restored.tempHpBefore, 8);
+      expect(restored.tempHpAfter, 0);
+    });
+
+    test('Die Details eines Angriffs zeigen die abgefangenen temporären '
+        'Trefferpunkte', () {
+      final event = AttackEvent(
+        attackerName: 'Goblin',
+        targetName: 'Aria',
+        attackName: 'Krummsäbel',
+        targetArmorClass: 16,
+        attackRoll: attackRoll([15]),
+        hit: true,
+        critical: false,
+        damageType: 'Hieb',
+        damageRoll: RollRecord(count: 1, sides: 6, rolls: [4]),
+        damage: 4,
+        tempHpAbsorbed: 3,
+      );
+
+      expect(detailsOf(event).last, 'Von temporären TP abgefangen: 3');
+      final restored =
+          LogEvent.fromJson(event.type, event.toJson()) as AttackEvent;
+      expect(restored.tempHpAbsorbed, 3);
+    });
+
+    test('Ohne temporäre Trefferpunkte fehlen diese Zeilen', () {
+      expect(
+        detailsOf(hitEvent()).where((l) => l.contains('temporär')),
+        isEmpty,
+      );
+    });
+  });
 }

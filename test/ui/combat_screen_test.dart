@@ -1335,4 +1335,64 @@ void main() {
       expect(scene.encounter.isRunning, isTrue);
     });
   });
+
+  group('Kampf-Bildschirm: Temporäre Trefferpunkte', () {
+    testWidgets('Über "TP ändern" lassen sich temporäre Trefferpunkte mit '
+        'Quelle vergeben; sie stehen bei den Werten des Kämpfers', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await type(tester, 'hp-amount', '8');
+      await type(tester, 'hp-source', 'Falsches Leben');
+      await tapKey(tester, 'hp-temp');
+
+      expect(scene.aria.tempHp, 8);
+      expect(textOf(tester, 'stats-0'), 'RK 16 · TP 20/20 (+8 temporär)');
+      final event = (await scene.events()).whereType<TempHpEvent>().single;
+      expect(event.source, 'Falsches Leben');
+    });
+
+    testWidgets('Ohne Betrag werden keine temporären Trefferpunkte '
+        'vergeben', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await tapKey(tester, 'hp-temp');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.tempHp, 0);
+    });
+
+    testWidgets('Schaden zieht zuerst die temporären Trefferpunkte ab', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.encounter.grantTempHp(scene.aria, 8);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await type(tester, 'hp-amount', '10');
+      await tapKey(tester, 'hp-damage');
+
+      expect(textOf(tester, 'stats-0'), 'RK 16 · TP 18/20');
+    });
+
+    testWidgets('Temporäre Trefferpunkte lassen sich entfernen; ohne sie '
+        'fehlt der Knopf', (tester) async {
+      final scene = Scene([]);
+      await scene.encounter.grantTempHp(scene.aria, 8);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await tapKey(tester, 'hp-temp-remove');
+
+      expect(scene.aria.tempHp, 0);
+      await tapKey(tester, 'hp-0');
+      expect(find.byKey(const Key('hp-temp-remove')), findsNothing);
+    });
+  });
 }

@@ -54,6 +54,7 @@ class LogFormatter {
       ]),
       ConditionEvent() => _condition(event),
       BuffEvent() => _buff(event),
+      TempHpEvent() => _tempHp(event),
       CombatantStableEvent() => LogLine([LogSpan('${event.name} ist stabil')]),
       CombatantDiedEvent() => LogLine([
         LogSpan(
@@ -130,6 +131,8 @@ class LogFormatter {
                   '${extra.rolled} → ${extra.damage}',
           ],
           if (event.extraDamage.isNotEmpty) 'Gesamtschaden: ${event.damage}',
+          if (event.tempHpAbsorbed > 0)
+            'Von temporären TP abgefangen: ${event.tempHpAbsorbed}',
         ],
       ),
       LogSpan(
@@ -159,9 +162,12 @@ class LogFormatter {
         '${effect.label}'
             '${event.damageType == null ? '' : ' gegen ${event.damageType}'}: '
             '${event.amount} → ${event.adjusted}',
+      if (event.tempHpBefore != event.tempHpAfter)
+        'Temporäre TP: ${event.tempHpBefore} → ${event.tempHpAfter}',
       'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
           '(Maximum ${event.maxHp})',
-      if (event.effective != event.adjusted)
+      if (event.effective + event.tempHpBefore - event.tempHpAfter !=
+          event.adjusted)
         'Davon wirksam: ${event.effective}',
     ];
 
@@ -173,6 +179,21 @@ class LogFormatter {
         '${notes.isEmpty ? '' : ' (${notes.join(', ')})'}',
       ),
     ]);
+  }
+
+  LogLine _tempHp(TempHpEvent event) {
+    final source = event.source == null ? '' : ' (${event.source})';
+    final String text;
+    if (event.amount == 0) {
+      text = '${event.name} verliert ${event.tempHpBefore} temporäre TP';
+    } else if (event.kept) {
+      text =
+          '${event.name} behält ${event.tempHpAfter} temporäre TP '
+          'statt ${event.amount}$source';
+    } else {
+      text = '${event.name} erhält ${event.amount} temporäre TP$source';
+    }
+    return LogLine([LogSpan(text)]);
   }
 
   /// `vergiftet` for `poisoned`; the stored name itself if this app version
