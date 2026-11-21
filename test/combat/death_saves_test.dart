@@ -527,4 +527,110 @@ void main() {
       expect(aria.deathSaveFailures, 0);
     });
   });
+
+  group('Wiederbeleben', () {
+    /// Aria dies outright from massive damage.
+    Future<void> ariaDies(Scene scene) =>
+        scene.encounter.damage(scene.aria, 40);
+
+    test('Ein toter Charakter kommt mit 1 Trefferpunkt zurück, wenn nichts '
+        'anderes angegeben ist', () async {
+      final scene = Scene([]);
+      await ariaDies(scene);
+
+      await scene.encounter.revive(scene.aria);
+
+      expect(scene.aria.isDead, isFalse);
+      expect(scene.aria.hp, 1);
+      expect(scene.aria.isDown, isFalse);
+    });
+
+    test('Die Trefferpunkte nach dem Wiederbeleben lassen sich angeben, '
+        'z. B. alle bei Auferstehung', () async {
+      final scene = Scene([]);
+      await ariaDies(scene);
+
+      await scene.encounter.revive(scene.aria, hp: 20);
+
+      expect(scene.aria.hp, 20);
+    });
+
+    test('Todesrettungswürfe und die Markierung stabil sind danach '
+        'zurückgesetzt', () async {
+      final scene = Scene([1, 1]);
+      await scene.ariaDrops();
+      await scene.deathSave();
+      await scene.deathSave();
+      expect(scene.aria.isDead, isTrue);
+
+      await scene.encounter.revive(scene.aria);
+
+      expect(scene.aria.deathSaveFailures, 0);
+      expect(scene.aria.deathSaveSuccesses, 0);
+      expect(scene.aria.isStable, isFalse);
+    });
+
+    test('Nur Tote lassen sich wiederbeleben', () async {
+      final scene = Scene([]);
+      await scene.ariaDrops();
+
+      expect(() => scene.encounter.revive(scene.aria), throwsStateError);
+      expect(scene.aria.hp, 0);
+    });
+
+    test('Trefferpunkte unter 1 oder über dem Maximum werden abgelehnt und '
+        'ändern nichts', () async {
+      final scene = Scene([]);
+      await ariaDies(scene);
+      final before = (await scene.events()).length;
+
+      expect(
+        () => scene.encounter.revive(scene.aria, hp: 0),
+        throwsArgumentError,
+      );
+      expect(
+        () => scene.encounter.revive(scene.aria, hp: 21),
+        throwsArgumentError,
+      );
+      expect(scene.aria.isDead, isTrue);
+      expect(await scene.events(), hasLength(before));
+    });
+
+    test('Ein wiederbelebter Charakter ist wieder in der Zugfolge', () async {
+      final scene = Scene([10, 5]);
+      await scene.encounter.rollInitiative();
+      await ariaDies(scene);
+
+      await scene.encounter.revive(scene.aria);
+
+      expect(scene.aria.takesTurns, isTrue);
+    });
+
+    test('Das Wiederbeleben steht mit Trefferpunkten und Quelle im '
+        'Log', () async {
+      final scene = Scene([]);
+      await ariaDies(scene);
+
+      await scene.encounter.revive(scene.aria, source: 'Wiederbeleben');
+
+      final event = (await scene.events()).last as CombatantRevivedEvent;
+      expect(event.name, 'Aria');
+      expect(event.hp, 1);
+      expect(event.source, 'Wiederbeleben');
+    });
+
+    test('Der Zustand nach dem Wiederbeleben kommt nach dem Neustart '
+        'zurück', () async {
+      final scene = Scene([]);
+      await ariaDies(scene);
+      await scene.encounter.revive(scene.aria, hp: 5);
+      await scene.encounter.flush();
+
+      final restored = await Encounter.load(log: scene.log, store: scene.store);
+
+      final aria = restored.combatants.first;
+      expect(aria.isDead, isFalse);
+      expect(aria.hp, 5);
+    });
+  });
 }

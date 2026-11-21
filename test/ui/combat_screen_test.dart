@@ -1465,4 +1465,63 @@ void main() {
       expect(scene.aria.hp, 15);
     });
   });
+
+  group('Kampf-Bildschirm: Wiederbeleben', () {
+    /// Aria is a dead player character.
+    Scene deadAria() {
+      final scene = Scene([]);
+      scene.aria
+        ..isPlayer = true
+        ..hp = 0
+        ..isDead = true;
+      return scene;
+    }
+
+    testWidgets('Nur bei toten Charakteren steht ein Knopf zum '
+        'Wiederbeleben', (tester) async {
+      await deadAria().pump(tester);
+
+      expect(find.byKey(const Key('revive-0')), findsOneWidget);
+      expect(find.byKey(const Key('revive-1')), findsNothing);
+    });
+
+    testWidgets('Wiederbeleben mit vorbelegtem 1 TP und Quelle', (
+      tester,
+    ) async {
+      final scene = deadAria();
+      await scene.pump(tester);
+
+      await tapKey(tester, 'revive-0');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('revive-hp')))
+            .controller!
+            .text,
+        '1',
+      );
+      await type(tester, 'revive-source', 'Wiederbeleben');
+      await tapKey(tester, 'revive-confirm');
+
+      expect(scene.aria.isDead, isFalse);
+      expect(textOf(tester, 'stats-0'), 'RK 16 · TP 1/20');
+      expect(find.byKey(const Key('revive-0')), findsNothing);
+      final event = (await scene.events())
+          .whereType<CombatantRevivedEvent>()
+          .single;
+      expect(event.source, 'Wiederbeleben');
+    });
+
+    testWidgets('Trefferpunkte über dem Maximum werden mit einer Meldung '
+        'abgelehnt', (tester) async {
+      final scene = deadAria();
+      await scene.pump(tester);
+
+      await tapKey(tester, 'revive-0');
+      await type(tester, 'revive-hp', '25');
+      await tapKey(tester, 'revive-confirm');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.isDead, isTrue);
+    });
+  });
 }

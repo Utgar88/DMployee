@@ -55,6 +55,12 @@ class LogFormatter {
       ConditionEvent() => _condition(event),
       BuffEvent() => _buff(event),
       TempHpEvent() => _tempHp(event),
+      CombatantRevivedEvent() => LogLine([
+        LogSpan(
+          '${event.name} wird wiederbelebt und hat ${event.hp} TP'
+          '${event.source == null ? '' : ' (${event.source})'}',
+        ),
+      ]),
       CombatantStableEvent() => LogLine([LogSpan('${event.name} ist stabil')]),
       CombatantDiedEvent() => LogLine([
         LogSpan(

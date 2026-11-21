@@ -1118,4 +1118,44 @@ void main() {
       );
     });
   });
+
+  group('Log-Zeilen für das Wiederbeleben', () {
+    test('Die Zeile nennt Charakter, Trefferpunkte und Quelle', () {
+      expect(
+        formatter
+            .format(
+              const CombatantRevivedEvent(
+                name: 'Aria',
+                hp: 1,
+                source: 'Wiederbeleben',
+              ),
+            )
+            .text,
+        'Aria wird wiederbelebt und hat 1 TP (Wiederbeleben)',
+      );
+      expect(
+        formatter
+            .format(const CombatantRevivedEvent(name: 'Aria', hp: 20))
+            .text,
+        'Aria wird wiederbelebt und hat 20 TP',
+      );
+    });
+
+    test('Das Wiederbeleben kommt nach dem Speichern und Laden (JSON) '
+        'unverändert zurück', () {
+      const original = CombatantRevivedEvent(
+        name: 'Aria',
+        hp: 1,
+        source: 'Wiederbeleben',
+      );
+      final restored = LogEvent.fromJson(
+        original.type,
+        original.toJson(),
+      ) as CombatantRevivedEvent;
+
+      expect(restored.name, 'Aria');
+      expect(restored.hp, 1);
+      expect(restored.source, 'Wiederbeleben');
+    });
+  });
 }

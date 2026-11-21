@@ -34,6 +34,7 @@ sealed class LogEvent {
       ConditionEvent.typeName => ConditionEvent.fromJson(json),
       BuffEvent.typeName => BuffEvent.fromJson(json),
       TempHpEvent.typeName => TempHpEvent.fromJson(json),
+      CombatantRevivedEvent.typeName => CombatantRevivedEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

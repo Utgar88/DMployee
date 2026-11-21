@@ -666,3 +666,37 @@ class TempHpEvent extends LogEvent {
     'source': ?source,
   };
 }
+
+/// A dead player character was brought back to life, e.g. by the spell
+/// Wiederbeleben.
+class CombatantRevivedEvent extends LogEvent {
+  const CombatantRevivedEvent({
+    required this.name,
+    required this.hp,
+    this.source,
+  });
+
+  factory CombatantRevivedEvent.fromJson(Map<String, Object?> json) {
+    return CombatantRevivedEvent(
+      name: json['name']! as String,
+      hp: json['hp']! as int,
+      source: json['source'] as String?,
+    );
+  }
+
+  static const typeName = 'combatantRevived';
+
+  final String name;
+
+  /// Hit points the character came back with.
+  final int hp;
+
+  /// What brought them back, e.g. "Wiederbeleben"; optional.
+  final String? source;
+
+  @override
+  String get type => typeName;
+
+  @override
+  Map<String, Object?> toJson() => {'name': name, 'hp': hp, 'source': ?source};
+}

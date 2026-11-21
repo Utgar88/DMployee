@@ -163,6 +163,16 @@ class _CombatScreenState extends State<CombatScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _revive(Combatant combatant) async {
+    final event = await showDialog<LogEvent>(
+      context: context,
+      builder: (context) =>
+          _ReviveDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (event == null || !mounted) return;
+    setState(() => _lastAction = widget.formatter.format(event).text);
+  }
+
   Future<void> _deathSave(Combatant combatant) async {
     final event = await showDialog<DeathSaveEvent>(
       context: context,
@@ -348,6 +358,18 @@ class _CombatScreenState extends State<CombatScreen> {
                     child: const Text('Todesrettungswurf'),
                   ),
                 ],
+              ),
+            if (combatant.isDead)
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonal(
+                  key: Key('revive-$index'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () => _revive(combatant),
+                  child: const Text('Wiederbeleben'),
+                ),
               ),
             if (combatant.initiative != null)
               Text(
@@ -1289,7 +1311,8 @@ class _HpDialogState extends State<_HpDialog> {
     }
     if (healing && widget.combatant.isDead) {
       setState(
-        () => _errorText = 'Ein toter Charakter lässt sich nicht heilen.',
+        () => _errorText =
+            'Ein toter Charakter lässt sich nicht heilen, nur wiederbeleben.',
       );
       return;
     }
@@ -1492,6 +1515,86 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
           key: const Key('death-save-confirm'),
           onPressed: _roll,
           child: const Text('Würfeln'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Brings a dead character back with a number of hit points.
+class _ReviveDialog extends StatefulWidget {
+  const _ReviveDialog({required this.encounter, required this.combatant});
+
+  final Encounter encounter;
+  final Combatant combatant;
+
+  @override
+  State<_ReviveDialog> createState() => _ReviveDialogState();
+}
+
+class _ReviveDialogState extends State<_ReviveDialog> {
+  final _hp = TextEditingController(text: '1');
+  final _source = TextEditingController();
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _hp.dispose();
+    _source.dispose();
+    super.dispose();
+  }
+
+  Future<void> _revive() async {
+    final maxHp = widget.combatant.maxHp;
+    final hp = int.tryParse(_hp.text);
+    if (hp == null || hp < 1 || hp > maxHp) {
+      setState(() => _errorText = 'Bitte 1 bis $maxHp TP eintragen.');
+      return;
+    }
+    final event = await widget.encounter.revive(
+      widget.combatant,
+      hp: hp,
+      source: _source.text,
+    );
+    if (mounted) Navigator.pop(context, event);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.combatant.name} wiederbeleben'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _field(
+              'revive-hp',
+              'Trefferpunkte danach',
+              _hp,
+              helper: 'Wiederbeleben, Tote erwecken: 1; Auferstehung: alle',
+              formatters: _digits,
+              number: true,
+            ),
+            _field(
+              'revive-source',
+              'Quelle (optional)',
+              _source,
+              helper: 'z. B. Wiederbeleben',
+            ),
+            if (_errorText != null) _error(context, _errorText!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          key: const Key('revive-confirm'),
+          onPressed: _revive,
+          child: const Text('Wiederbeleben'),
         ),
       ],
     );

@@ -835,6 +835,40 @@ class Encounter {
     ];
   }
 
+  /// Brings a dead [combatant] back to life with [hp] hit points: 1 for
+  /// spells like Wiederbeleben or Tote erwecken, the maximum for
+  /// Auferstehung. Death saving throws start over.
+  ///
+  /// A [combatant] who is not dead throws a [StateError], [hp] below 1 or
+  /// above the maximum an [ArgumentError]; both change nothing.
+  Future<CombatantRevivedEvent> revive(
+    Combatant combatant, {
+    int hp = 1,
+    String? source,
+  }) async {
+    if (!combatant.isDead) {
+      throw StateError('${combatant.name} is not dead');
+    }
+    if (hp < 1 || hp > combatant.maxHp) {
+      throw ArgumentError.value(hp, 'hp', 'must be 1 to ${combatant.maxHp}');
+    }
+    combatant
+      ..isDead = false
+      ..isStable = false
+      ..deathSaveSuccesses = 0
+      ..deathSaveFailures = 0
+      ..hp = hp;
+    final trimmed = source?.trim();
+    final event = CombatantRevivedEvent(
+      name: combatant.name,
+      hp: hp,
+      source: trimmed == null || trimmed.isEmpty ? null : trimmed,
+    );
+    await _log.add(event);
+    await _save();
+    return event;
+  }
+
   /// Marks [combatant] as dead once the third death saving throw failed.
   bool _diesFromFailures(Combatant combatant) {
     if (combatant.deathSaveFailures < 3) return false;
