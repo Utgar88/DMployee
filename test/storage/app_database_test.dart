@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:dmployee/characters/character.dart';
+import 'package:dmployee/characters/sqlite_character_repository.dart';
 import 'package:dmployee/combat/sqlite_encounter_store.dart';
 import 'package:dmployee/log/log_event.dart';
 import 'package:dmployee/log/sqlite_log_repository.dart';
@@ -92,6 +94,47 @@ void main() {
       expect(await store.load(), isNull);
       await store.save({'round': 2});
       expect(await store.load(), {'round': 2});
+    });
+    test('Eine Datenbank der zweiten App-Version (Log und Kampfstand) wird '
+        'um die Charaktere erweitert; Log und Kampfstand bleiben '
+        'erhalten', () async {
+      final directory = await Directory.systemTemp.createTemp('dmployee_db');
+      final path = '${directory.path}/dmployee.db';
+      addTearDown(() => directory.delete(recursive: true));
+      await createVersion1Database(path);
+      final version2 = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 2,
+          singleInstance: false,
+          onUpgrade: (db, oldVersion, newVersion) => db.execute('''
+            CREATE TABLE encounter_state (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              payload TEXT NOT NULL
+            )
+          '''),
+        ),
+      );
+      await SqliteEncounterStore(version2).save({'round': 4});
+      await version2.close();
+
+      final database = await openAppDatabase(
+        factory: databaseFactoryFfi,
+        path: path,
+      );
+      addTearDown(database.close);
+      final characters = SqliteCharacterRepository(database);
+
+      expect(
+        ((await SqliteLogRepository(database).entries()).single.event
+                as RoundEvent)
+            .round,
+        3,
+      );
+      expect(await SqliteEncounterStore(database).load(), {'round': 4});
+      expect(await characters.all(), isEmpty);
+      await characters.save(Character(name: 'Aria', maxHp: 20, armorClass: 16));
+      expect((await characters.all()).single.name, 'Aria');
     });
   });
 }

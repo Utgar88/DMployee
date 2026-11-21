@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 /// Opens (and if needed creates or upgrades) the app's single database at
-/// [path]. Log and combat state both live in it.
+/// [path]. Log, combat state and characters all live in it.
 ///
 /// [factory] defaults to the device database; tests pass an FFI factory.
 ///
@@ -14,7 +14,7 @@ Future<Database> openAppDatabase({
   return (factory ?? databaseFactory).openDatabase(
     path,
     options: OpenDatabaseOptions(
-      version: 2,
+      version: 3,
       // Always a fresh connection: tests rely on separate in-memory
       // databases.
       singleInstance: false,
@@ -46,10 +46,12 @@ Future<void> _create(Database db, int version) async {
     'CREATE INDEX log_entries_session ON log_entries (session_id, id)',
   );
   await _createEncounterState(db);
+  await _createCharacters(db);
 }
 
 Future<void> _upgrade(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 2) await _createEncounterState(db);
+  if (oldVersion < 3) await _createCharacters(db);
 }
 
 /// Version 2: one row holding the current combat as JSON.
@@ -57,6 +59,17 @@ Future<void> _createEncounterState(Database db) {
   return db.execute('''
     CREATE TABLE encounter_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
+      payload TEXT NOT NULL
+    )
+  ''');
+}
+
+/// Version 3: the player characters, one row each with their values as
+/// JSON.
+Future<void> _createCharacters(Database db) {
+  return db.execute('''
+    CREATE TABLE characters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       payload TEXT NOT NULL
     )
   ''');
