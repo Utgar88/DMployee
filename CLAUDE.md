@@ -27,7 +27,7 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 ## Arbeitsweise
 
 - Claude führt die Entwicklung, Dirk testet und gibt Feedback.
-- Reihenfolge: Würfler, Log, Kampf-Engine (alle begonnen), danach Charaktere, Compendium, Session-View. Aktueller Stand und nächste Schritte stehen im Vault in `02 Projekte/DMployee.md`.
+- Reihenfolge: Würfler, Log, Kampf-Engine, Charaktere (alle begonnen), danach Compendium, Session-View. Aktueller Stand und nächste Schritte stehen im Vault in `02 Projekte/DMployee.md`.
 - Logik von UI trennen.
 - Nach Änderungen `flutter analyze` und `flutter test` ausführen.
 
@@ -50,6 +50,13 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Zustände (`lib/combat/condition.dart`), Effekte/Buffs (`lib/combat/buff.dart`) und Resistenzen (`lib/combat/damage.dart`): Die App wendet nur an, was in jeder Lage gilt. Regeln, die von Abstand oder Sicht abhängen, werden als Hinweis angezeigt und von der Spielleitung eingestellt.
 - Dauern zählen am Ende des Zugs des betroffenen Kämpfers herunter (`Encounter._endTurn`); neue Dinge mit Dauer dort einhängen.
 - Der Kampfstand wird nach jeder Änderung gespeichert (`EncounterStore`, Tabelle `encounter_state`). Änderungen am Kampf deshalb immer über Methoden von `Encounter` machen, nie direkt an `Combatant` aus dem Bildschirm heraus; neue Felder in `toJson`/`fromJson` aufnehmen.
+
+## Charaktere
+
+- Modell in `lib/characters/` (`Character`, `Ability`). Abgeleitete Werte (Modifikatoren, Übungsbonus, Initiative, Rettungswürfe) werden berechnet, nie gespeichert.
+- Ein Charakter im Kampf ist mit seinem Kämpfer verknüpft (`Combatant.characterId`). Den Zustand (TP, temporäre TP, Todesrettungswürfe, stabil, tot) schreibt `Encounter._save` zurück; neue Zustandsfelder dort und in `addCharacter` ergänzen.
+- Bogenwerte (Name, RK, maximale TP, Angriffe usw.) ändern sich nur über den Charakterbogen; danach `Encounter.applyCharacter` aufrufen. Beim Löschen `Encounter.forgetCharacter`.
+- Klasse bleibt Freitext, bis das Regelwerk (2014 oder 2024) feststeht. Erschöpfung ist bis zum wählbaren Regelwerk zurückgestellt.
 
 ## Datenbank
 
