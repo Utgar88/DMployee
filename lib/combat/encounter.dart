@@ -126,6 +126,62 @@ class Encounter {
     unawaited(_save());
   }
 
+  /// Takes [attack] off [combatant].
+  void removeAttack(Combatant combatant, Attack attack) {
+    combatant.attacks.remove(attack);
+    unawaited(_save());
+  }
+
+  /// Corrects the values of [combatant]; values left out stay as they are.
+  /// This is not something that happens in the game, so nothing is logged.
+  ///
+  /// A combatant at full hit points keeps full hit points with a new
+  /// [maxHp]; otherwise hit points stay but never exceed the new maximum.
+  /// A combatant who stops being a player character loses their death
+  /// saving throws and the marks stable and dead; at 0 hit points they are
+  /// simply down, like a monster.
+  ///
+  /// An empty [name], [armorClass] below 0 or [maxHp] below 1 throw an
+  /// [ArgumentError] and change nothing.
+  void edit(
+    Combatant combatant, {
+    String? name,
+    int? armorClass,
+    int? maxHp,
+    int? initiativeBonus,
+    bool? isPlayer,
+  }) {
+    final trimmed = name?.trim();
+    if (trimmed != null && trimmed.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be empty');
+    }
+    if (armorClass != null && armorClass < 0) {
+      throw ArgumentError.value(armorClass, 'armorClass', 'must not be < 0');
+    }
+    if (maxHp != null && maxHp < 1) {
+      throw ArgumentError.value(maxHp, 'maxHp', 'must be at least 1');
+    }
+
+    if (trimmed != null) combatant.name = trimmed;
+    if (armorClass != null) combatant.armorClass = armorClass;
+    if (initiativeBonus != null) combatant.initiativeBonus = initiativeBonus;
+    if (maxHp != null) {
+      final unhurt = combatant.hp == combatant.maxHp;
+      combatant
+        ..hp = unhurt || combatant.hp > maxHp ? maxHp : combatant.hp
+        ..maxHp = maxHp;
+    }
+    if (isPlayer != null && isPlayer != combatant.isPlayer) {
+      combatant
+        ..isPlayer = isPlayer
+        ..deathSaveSuccesses = 0
+        ..deathSaveFailures = 0
+        ..isStable = false
+        ..isDead = false;
+    }
+    unawaited(_save());
+  }
+
   /// Sets how [combatant] reacts to damage of [type]; null for [effect]
   /// removes the entry. There is one entry per damage type.
   void setDamageTrait(Combatant combatant, String type, DamageEffect? effect) {

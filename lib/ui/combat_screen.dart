@@ -42,6 +42,15 @@ class _CombatScreenState extends State<CombatScreen> {
     if (added ?? false) setState(() {});
   }
 
+  Future<void> _editCombatant(Combatant combatant) async {
+    final edited = await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          _CombatantDialog(encounter: _encounter, combatant: combatant),
+    );
+    if (edited ?? false) setState(() {});
+  }
+
   Future<void> _addAttack(Combatant combatant) async {
     final attack = await showDialog<Attack>(
       context: context,
@@ -275,6 +284,13 @@ class _CombatScreenState extends State<CombatScreen> {
                 else if (combatant.isDown)
                   const _Badge('am Boden'),
                 if (combatant.isStable) const _Badge('stabil'),
+                IconButton(
+                  key: Key('edit-$index'),
+                  tooltip: 'Kämpfer bearbeiten',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _editCombatant(combatant),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
                 if (!running)
                   IconButton(
                     key: Key('remove-$index'),
@@ -539,22 +555,34 @@ class _AttackFields {
   }
 }
 
+/// Adds a combatant, or with [combatant] edits an existing one.
 class _CombatantDialog extends StatefulWidget {
-  const _CombatantDialog({required this.encounter});
+  const _CombatantDialog({required this.encounter, this.combatant});
 
   final Encounter encounter;
+
+  /// The combatant to edit; null to add a new one.
+  final Combatant? combatant;
 
   @override
   State<_CombatantDialog> createState() => _CombatantDialogState();
 }
 
 class _CombatantDialogState extends State<_CombatantDialog> {
-  final _name = TextEditingController();
-  final _armorClass = TextEditingController();
-  final _hp = TextEditingController();
-  final _initiative = TextEditingController();
+  late final _editing = widget.combatant;
+  late final _name = TextEditingController(text: _editing?.name);
+  late final _armorClass = TextEditingController(
+    text: _editing?.armorClass.toString(),
+  );
+  late final _hp = TextEditingController(text: _editing?.maxHp.toString());
+  late final _initiative = TextEditingController(
+    text: _editing?.initiativeBonus.toString(),
+  );
   final _attack = _AttackFields();
-  bool _isPlayer = false;
+  late bool _isPlayer = _editing?.isPlayer ?? false;
+
+  /// Stored attacks marked for removal; removed when saving.
+  final _removedAttacks = <Attack>{};
   String? _errorText;
 
   @override
@@ -578,6 +606,22 @@ class _CombatantDialogState extends State<_CombatantDialog> {
         () =>
             _errorText = 'Name, Rüstungsklasse und Trefferpunkte sind Pflicht.',
       );
+      return;
+    }
+
+    if (_editing case final combatant?) {
+      widget.encounter.edit(
+        combatant,
+        name: _name.text,
+        armorClass: armorClass,
+        maxHp: hp,
+        initiativeBonus: int.tryParse(_initiative.text) ?? 0,
+        isPlayer: _isPlayer,
+      );
+      for (final attack in _removedAttacks) {
+        widget.encounter.removeAttack(combatant, attack);
+      }
+      Navigator.pop(context, true);
       return;
     }
 
@@ -605,7 +649,9 @@ class _CombatantDialogState extends State<_CombatantDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Kämpfer hinzufügen'),
+      title: Text(
+        _editing == null ? 'Kämpfer hinzufügen' : 'Kämpfer bearbeiten',
+      ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -643,11 +689,30 @@ class _CombatantDialogState extends State<_CombatantDialog> {
               onChanged: (value) => setState(() => _isPlayer = value),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Angriff (optional)',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            ..._attack.build(),
+            if (_editing case final combatant?) ...[
+              if (combatant.attacks.isNotEmpty)
+                Text('Angriffe', style: Theme.of(context).textTheme.titleSmall),
+              for (final (index, attack) in combatant.attacks.indexed)
+                if (!_removedAttacks.contains(attack))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(attack.summary),
+                    trailing: IconButton(
+                      key: Key('edit-remove-attack-$index'),
+                      tooltip: 'Angriff entfernen',
+                      onPressed: () =>
+                          setState(() => _removedAttacks.add(attack)),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ),
+            ] else ...[
+              Text(
+                'Angriff (optional)',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              ..._attack.build(),
+            ],
             if (_errorText != null) _error(context, _errorText!),
           ],
         ),
@@ -660,7 +725,7 @@ class _CombatantDialogState extends State<_CombatantDialog> {
         FilledButton(
           key: const Key('combatant-save'),
           onPressed: _save,
-          child: const Text('Hinzufügen'),
+          child: Text(_editing == null ? 'Hinzufügen' : 'Speichern'),
         ),
       ],
     );

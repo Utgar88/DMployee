@@ -1242,4 +1242,97 @@ void main() {
       expect(scene.aria.deathSaveSuccesses, 0);
     });
   });
+
+  group('Kampf-Bildschirm: Kämpfer bearbeiten', () {
+    String fieldText(WidgetTester tester, String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+
+    testWidgets('Das Fenster zum Bearbeiten zeigt die aktuellen Werte', (
+      tester,
+    ) async {
+      await Scene([]).pump(tester);
+
+      await tapKey(tester, 'edit-0');
+
+      expect(fieldText(tester, 'combatant-name'), 'Aria');
+      expect(fieldText(tester, 'combatant-ac'), '16');
+      expect(fieldText(tester, 'combatant-hp'), '20');
+      expect(fieldText(tester, 'combatant-init'), '2');
+      expect(find.text('Kämpfer bearbeiten'), findsOneWidget);
+    });
+
+    testWidgets('Geänderte Werte werden übernommen und angezeigt', (
+      tester,
+    ) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'edit-1');
+      await type(tester, 'combatant-name', 'Goblin-Boss');
+      await type(tester, 'combatant-ac', '15');
+      await type(tester, 'combatant-hp', '21');
+      await tapKey(tester, 'combatant-player');
+      await tapKey(tester, 'combatant-save');
+
+      expect(scene.goblin.name, 'Goblin-Boss');
+      expect(scene.goblin.isPlayer, isTrue);
+      expect(textOf(tester, 'name-1'), 'Goblin-Boss');
+      expect(textOf(tester, 'stats-1'), 'RK 15 · TP 21/21');
+    });
+
+    testWidgets('Ein hinterlegter Angriff lässt sich beim Bearbeiten '
+        'entfernen; erst Speichern übernimmt das', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'edit-0');
+      await tapKey(tester, 'edit-remove-attack-0');
+      expect(scene.aria.attacks, hasLength(1));
+      await tapKey(tester, 'combatant-save');
+
+      expect(scene.aria.attacks, isEmpty);
+      expect(find.byKey(const Key('attack-0-0')), findsNothing);
+    });
+
+    testWidgets('Abbrechen ändert nichts', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'edit-0');
+      await type(tester, 'combatant-name', 'Arya');
+      await tapKey(tester, 'edit-remove-attack-0');
+      await tester.tap(find.text('Abbrechen'));
+      await tester.pumpAndSettle();
+
+      expect(scene.aria.name, 'Aria');
+      expect(scene.aria.attacks, hasLength(1));
+    });
+
+    testWidgets('Ohne Namen wird nichts geändert und eine Meldung '
+        'erscheint', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'edit-0');
+      await type(tester, 'combatant-name', '');
+      await tapKey(tester, 'combatant-save');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.name, 'Aria');
+    });
+
+    testWidgets('Auch im laufenden Kampf lässt sich ein Kämpfer '
+        'bearbeiten', (tester) async {
+      final scene = Scene([10, 5]);
+      await scene.pump(tester);
+      await startCombat(tester);
+
+      await tapKey(tester, 'edit-0');
+      await type(tester, 'combatant-ac', '18');
+      await tapKey(tester, 'combatant-save');
+
+      expect(scene.aria.armorClass, 18);
+      expect(scene.encounter.isRunning, isTrue);
+    });
+  });
 }

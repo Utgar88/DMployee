@@ -1,6 +1,7 @@
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/combatant.dart';
 import 'package:dmployee/combat/encounter.dart';
+import 'package:dmployee/combat/encounter_store.dart';
 import 'package:dmployee/dice/dice_expression.dart';
 import 'package:dmployee/dice/dice_roller.dart';
 import 'package:dmployee/log/log_event.dart';
@@ -603,6 +604,153 @@ void main() {
 
       final events = await scene.events();
       expect(events.whereType<CombatantDownEvent>(), hasLength(1));
+    });
+  });
+
+  group('Kämpfer bearbeiten', () {
+    test('Name, Rüstungsklasse, Initiative-Bonus und Spielercharakter lassen '
+        'sich nachträglich ändern', () {
+      final scene = Scene([]);
+
+      scene.encounter.edit(
+        scene.goblin,
+        name: 'Goblin-Boss',
+        armorClass: 17,
+        initiativeBonus: 2,
+        isPlayer: true,
+      );
+
+      expect(scene.goblin.name, 'Goblin-Boss');
+      expect(scene.goblin.armorClass, 17);
+      expect(scene.goblin.initiativeBonus, 2);
+      expect(scene.goblin.isPlayer, isTrue);
+    });
+
+    test('Nicht angegebene Werte bleiben, wie sie sind', () {
+      final scene = Scene([]);
+
+      scene.encounter.edit(scene.aria, armorClass: 18);
+
+      expect(scene.aria.name, 'Aria');
+      expect(scene.aria.maxHp, 20);
+      expect(scene.aria.initiativeBonus, 2);
+    });
+
+    test('Ein unverletzter Kämpfer hat nach einer Änderung der maximalen '
+        'Trefferpunkte wieder volle Trefferpunkte', () {
+      final scene = Scene([]);
+
+      scene.encounter.edit(scene.goblin, maxHp: 12);
+
+      expect(scene.goblin.maxHp, 12);
+      expect(scene.goblin.hp, 12);
+    });
+
+    test('Ein verletzter Kämpfer behält seine Trefferpunkte, höchstens aber '
+        'das neue Maximum', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.aria, 5);
+
+      scene.encounter.edit(scene.aria, maxHp: 30);
+      expect(scene.aria.hp, 15);
+
+      scene.encounter.edit(scene.aria, maxHp: 10);
+      expect(scene.aria.hp, 10);
+    });
+
+    test('Ein leerer Name, Trefferpunkte unter 1 oder eine negative '
+        'Rüstungsklasse werden abgelehnt und ändern nichts', () {
+      final scene = Scene([]);
+
+      expect(
+        () => scene.encounter.edit(scene.aria, name: ' ', armorClass: 18),
+        throwsArgumentError,
+      );
+      expect(
+        () => scene.encounter.edit(scene.aria, maxHp: 0),
+        throwsArgumentError,
+      );
+      expect(
+        () => scene.encounter.edit(scene.aria, armorClass: -1),
+        throwsArgumentError,
+      );
+      expect(scene.aria.name, 'Aria');
+      expect(scene.aria.armorClass, 16);
+      expect(scene.aria.maxHp, 20);
+    });
+
+    test('Ein Monster am Boden, das zum Spielercharakter wird, ist '
+        'sterbend und würfelt Todesrettungswürfe', () async {
+      final scene = Scene([]);
+      await scene.encounter.damage(scene.goblin, 7);
+
+      scene.encounter.edit(scene.goblin, isPlayer: true);
+
+      expect(scene.goblin.isDying, isTrue);
+    });
+
+    test('Ein Spielercharakter, der kein Spielercharakter mehr ist, verliert '
+        'Todesrettungswürfe und die Markierungen stabil und tot', () async {
+      final scene = Scene([]);
+      scene.encounter.edit(scene.aria, isPlayer: true);
+      await scene.encounter.damage(scene.aria, 20);
+      await scene.encounter.damage(scene.aria, 1);
+      await scene.encounter.damage(scene.aria, 1);
+      await scene.encounter.damage(scene.aria, 1);
+      expect(scene.aria.isDead, isTrue);
+
+      scene.encounter.edit(scene.aria, isPlayer: false);
+
+      expect(scene.aria.isDead, isFalse);
+      expect(scene.aria.isStable, isFalse);
+      expect(scene.aria.deathSaveFailures, 0);
+      expect(scene.aria.isDown, isTrue);
+    });
+
+    test('Ein hinterlegter Angriff lässt sich wieder entfernen', () {
+      final scene = Scene([]);
+
+      scene.encounter.removeAttack(scene.aria, longsword);
+
+      expect(scene.aria.attacks, isEmpty);
+    });
+
+    test('Bearbeiten schreibt nichts in den Log, weil im Spiel nichts '
+        'passiert', () async {
+      final scene = Scene([]);
+
+      scene.encounter.edit(scene.aria, name: 'Arya', armorClass: 17);
+      scene.encounter.removeAttack(scene.aria, longsword);
+
+      expect(await scene.events(), isEmpty);
+    });
+
+    test('Änderungen kommen nach dem Neustart zurück', () async {
+      final store = InMemoryEncounterStore();
+      final log = InMemoryLogRepository();
+      final encounter = Encounter(log: log, store: store);
+      final aria = encounter.add(
+        name: 'Aria',
+        armorClass: 16,
+        maxHp: 20,
+        attacks: [longsword],
+      );
+
+      encounter
+        ..edit(aria, name: 'Arya', armorClass: 17, maxHp: 25, isPlayer: true)
+        ..removeAttack(aria, aria.attacks.single);
+      await encounter.flush();
+      final restored = (await Encounter.load(
+        log: log,
+        store: store,
+      )).combatants.single;
+
+      expect(restored.name, 'Arya');
+      expect(restored.armorClass, 17);
+      expect(restored.maxHp, 25);
+      expect(restored.hp, 25);
+      expect(restored.isPlayer, isTrue);
+      expect(restored.attacks, isEmpty);
     });
   });
 }
