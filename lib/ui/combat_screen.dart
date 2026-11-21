@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../combat/attack.dart';
@@ -7,10 +6,10 @@ import '../combat/combatant.dart';
 import '../combat/condition.dart';
 import '../combat/damage.dart';
 import '../combat/encounter.dart';
-import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
 import '../log/log_event.dart';
 import '../log/log_formatter.dart';
+import 'form_widgets.dart';
 
 /// Combat screen: set up combatants, roll initiative, step through turns and
 /// resolve attacks. All rules live in [Encounter]; this is only the surface.
@@ -54,7 +53,7 @@ class _CombatScreenState extends State<CombatScreen> {
   Future<void> _addAttack(Combatant combatant) async {
     final attack = await showDialog<Attack>(
       context: context,
-      builder: (context) => _AttackDialog(combatant: combatant),
+      builder: (context) => AttackDialog(owner: combatant.name),
     );
     if (attack != null) {
       setState(() => _encounter.addAttack(combatant, attack));
@@ -488,185 +487,6 @@ class _Badge extends StatelessWidget {
   }
 }
 
-final _digits = [FilteringTextInputFormatter.digitsOnly];
-final _signedDigits = [FilteringTextInputFormatter.allow(RegExp(r'[-+0-9]'))];
-
-Widget _field(
-  String key,
-  String label,
-  TextEditingController controller, {
-  List<TextInputFormatter>? formatters,
-  bool number = false,
-  String? helper,
-}) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: TextField(
-      key: Key(key),
-      controller: controller,
-      keyboardType: number ? TextInputType.number : TextInputType.text,
-      inputFormatters: formatters,
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: helper,
-        isDense: true,
-      ),
-    ),
-  );
-}
-
-/// Text field for a damage type that suggests the damage types of the
-/// rules while it has focus. Any other text is allowed as well.
-class _DamageTypeField extends StatefulWidget {
-  const _DamageTypeField({
-    required this.fieldKey,
-    required this.label,
-    required this.controller,
-    this.helper,
-  });
-
-  /// Key of the text field; suggestions get `<fieldKey>-option-<type>`.
-  final String fieldKey;
-  final String label;
-  final TextEditingController controller;
-  final String? helper;
-
-  @override
-  State<_DamageTypeField> createState() => _DamageTypeFieldState();
-}
-
-class _DamageTypeFieldState extends State<_DamageTypeField> {
-  final _focus = FocusNode();
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  /// Damage types containing the typed text; none once it is complete.
-  Iterable<String> _options(TextEditingValue value) {
-    final typed = normalizeDamageType(value.text);
-    if (damageTypes.any((type) => normalizeDamageType(type) == typed)) {
-      return const [];
-    }
-    return damageTypes.where((type) => type.toLowerCase().contains(typed));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RawAutocomplete<String>(
-      textEditingController: widget.controller,
-      focusNode: _focus,
-      optionsBuilder: _options,
-      fieldViewBuilder: (context, controller, focusNode, onSubmitted) =>
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TextField(
-              key: Key(widget.fieldKey),
-              controller: controller,
-              focusNode: focusNode,
-              onSubmitted: (_) => onSubmitted(),
-              decoration: InputDecoration(
-                labelText: widget.label,
-                helperText: widget.helper,
-                isDense: true,
-              ),
-            ),
-          ),
-      optionsViewBuilder: (context, onSelected, options) => Align(
-        alignment: Alignment.topLeft,
-        child: Material(
-          elevation: 4,
-          borderRadius: BorderRadius.circular(8),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 240),
-            child: ListView(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              children: [
-                for (final option in options)
-                  ListTile(
-                    key: Key('${widget.fieldKey}-option-$option'),
-                    dense: true,
-                    title: Text(option),
-                    onTap: () => onSelected(option),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Widget _error(BuildContext context, String message) => Padding(
-  padding: const EdgeInsets.only(top: 8),
-  child: Text(
-    message,
-    key: const Key('form-error'),
-    style: TextStyle(color: Theme.of(context).colorScheme.error),
-  ),
-);
-
-/// Input fields for one attack. Used when creating a combatant and when
-/// adding a further attack.
-class _AttackFields {
-  final name = TextEditingController();
-  final bonus = TextEditingController();
-  final damage = TextEditingController();
-  final type = TextEditingController();
-
-  bool get isEmpty => name.text.trim().isEmpty && damage.text.trim().isEmpty;
-
-  /// The entered attack, or an error message if the input is invalid.
-  (Attack?, String?) read() {
-    if (name.text.trim().isEmpty) {
-      return (null, 'Der Angriff braucht einen Namen.');
-    }
-    final DiceExpression expression;
-    try {
-      expression = DiceExpression.parse(damage.text);
-    } on FormatException {
-      return (null, 'Schaden bitte als Würfelausdruck angeben, z. B. 1d8+3.');
-    }
-    return (
-      Attack(
-        name: name.text.trim(),
-        attackBonus: int.tryParse(bonus.text) ?? 0,
-        damage: expression,
-        damageType: type.text.trim().isEmpty ? 'Schaden' : type.text.trim(),
-      ),
-      null,
-    );
-  }
-
-  List<Widget> build() => [
-    _field('attack-name', 'Angriff (z. B. Langschwert)', name),
-    _field(
-      'attack-bonus',
-      'Angriffsbonus',
-      bonus,
-      formatters: _signedDigits,
-      number: true,
-    ),
-    _field('attack-damage', 'Schaden (z. B. 1d8+3)', damage),
-    _DamageTypeField(
-      fieldKey: 'attack-type',
-      label: 'Schadensart (z. B. Hieb)',
-      controller: type,
-    ),
-  ];
-
-  void dispose() {
-    name.dispose();
-    bonus.dispose();
-    damage.dispose();
-    type.dispose();
-  }
-}
-
 /// Adds a combatant, or with [combatant] edits an existing one.
 class _CombatantDialog extends StatefulWidget {
   const _CombatantDialog({required this.encounter, this.combatant});
@@ -690,7 +510,7 @@ class _CombatantDialogState extends State<_CombatantDialog> {
   late final _initiative = TextEditingController(
     text: _editing?.initiativeBonus.toString(),
   );
-  final _attack = _AttackFields();
+  final _attack = AttackFields();
   late bool _isPlayer = _editing?.isPlayer ?? false;
 
   /// Stored attacks marked for removal; removed when saving.
@@ -769,26 +589,26 @@ class _CombatantDialogState extends State<_CombatantDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _field('combatant-name', 'Name', _name),
-            _field(
+            inputField('combatant-name', 'Name', _name),
+            inputField(
               'combatant-ac',
               'Rüstungsklasse (RK)',
               _armorClass,
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            _field(
+            inputField(
               'combatant-hp',
               'Trefferpunkte (TP)',
               _hp,
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            _field(
+            inputField(
               'combatant-init',
               'Initiative-Bonus',
               _initiative,
-              formatters: _signedDigits,
+              formatters: signedDigitsInput,
               number: true,
             ),
             SwitchListTile(
@@ -825,7 +645,7 @@ class _CombatantDialogState extends State<_CombatantDialog> {
               ),
               ..._attack.build(),
             ],
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
           ],
         ),
       ),
@@ -838,62 +658,6 @@ class _CombatantDialogState extends State<_CombatantDialog> {
           key: const Key('combatant-save'),
           onPressed: _save,
           child: Text(_editing == null ? 'Hinzufügen' : 'Speichern'),
-        ),
-      ],
-    );
-  }
-}
-
-class _AttackDialog extends StatefulWidget {
-  const _AttackDialog({required this.combatant});
-
-  final Combatant combatant;
-
-  @override
-  State<_AttackDialog> createState() => _AttackDialogState();
-}
-
-class _AttackDialogState extends State<_AttackDialog> {
-  final _attack = _AttackFields();
-  String? _errorText;
-
-  @override
-  void dispose() {
-    _attack.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final (attack, message) = _attack.read();
-    if (attack == null) {
-      setState(() => _errorText = message);
-      return;
-    }
-    Navigator.pop(context, attack);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Angriff für ${widget.combatant.name}'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ..._attack.build(),
-            if (_errorText != null) _error(context, _errorText!),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Abbrechen'),
-        ),
-        FilledButton(
-          key: const Key('attack-save'),
-          onPressed: _save,
-          child: const Text('Hinterlegen'),
         ),
       ],
     );
@@ -957,14 +721,14 @@ class _InitiativeDialogState extends State<_InitiativeDialog> {
             const SizedBox(height: 8),
             for (final (index, combatant)
                 in widget.encounter.combatants.indexed)
-              _field(
+              inputField(
                 'manual-init-$index',
                 '${combatant.name} (d20)',
                 _controllers[combatant]!,
-                formatters: _digits,
+                formatters: digitsInput,
                 number: true,
               ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
           ],
         ),
       ),
@@ -1179,47 +943,47 @@ class _TargetDialogState extends State<_TargetDialog> {
               'Am Tisch gewürfelt? (optional)',
               style: Theme.of(context).textTheme.titleSmall,
             ),
-            _field(
+            inputField(
               'manual-attack',
               'Angriffswurf (d20)',
               _manualAttack,
               helper: 'Gewürfelte Zahl ohne Angriffsbonus',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
             for (final (index, MapEntry(key: buff, value: controller))
                 in _buffDice.entries.indexed)
               if (!_ignoredBuffs.contains(buff))
-                _field(
+                inputField(
                   'manual-buff-$index',
                   '${buff.name} (Angriff ${buff.attackBonus!.dice})',
                   controller,
                   helper: 'Augensumme des Bonuswürfels',
-                  formatters: _digits,
+                  formatters: digitsInput,
                   number: true,
                 ),
-            _field(
+            inputField(
               'manual-damage',
               'Schadenswürfel (Summe)',
               _manualDamage,
               helper: 'Augensumme ohne Schadensbonus',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
             for (final (index, MapEntry(key: buff, value: controller))
                 in _buffDamageDice.entries.indexed)
               if (!_ignoredBuffs.contains(buff))
-                _field(
+                inputField(
                   'manual-buff-damage-$index',
                   '${buff.name} (Schaden ${buff.damageBonus!.dice})',
                   controller,
                   helper:
                       'Augensumme; bei kritischem Treffer doppelt so viele '
                       'Würfel',
-                  formatters: _digits,
+                  formatters: digitsInput,
                   number: true,
                 ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
             const SizedBox(height: 8),
             Text('Ziel wählen', style: Theme.of(context).textTheme.titleSmall),
             for (final (index, combatant) in combatants.indexed)
@@ -1339,26 +1103,26 @@ class _HpDialogState extends State<_HpDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _field(
+            inputField(
               'hp-amount',
               'Betrag',
               _amount,
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            _field(
+            inputField(
               'hp-source',
               'Quelle (optional)',
               _source,
               helper: 'z. B. Feuerball, Heiltrank, Falle',
             ),
-            _DamageTypeField(
+            DamageTypeField(
               fieldKey: 'hp-damage-type',
               label: 'Schadensart (optional)',
               controller: _damageType,
               helper: 'z. B. Feuer; nur dann wirken Resistenzen',
             ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1478,22 +1242,22 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
               'Fehlschläge ${combatant.deathSaveFailures}',
             ),
             const SizedBox(height: 8),
-            _field(
+            inputField(
               'manual-death-save',
               'Am Tisch gewürfelt? (d20, optional)',
               _manual,
               helper: 'Leer lassen, dann würfelt die App',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
             for (final (index, MapEntry(key: buff, value: controller))
                 in _buffDice.entries.indexed)
-              _field(
+              inputField(
                 'manual-death-save-buff-$index',
                 '${buff.name} (${buff.saveBonus!.dice})',
                 controller,
                 helper: 'Augensumme des Bonuswürfels, optional',
-                formatters: _digits,
+                formatters: digitsInput,
                 number: true,
               ),
             for (final buff in widget.combatant.buffs)
@@ -1502,7 +1266,7 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
                   '${buff.name}: $bonus auf den Wurf',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
           ],
         ),
       ),
@@ -1568,21 +1332,21 @@ class _ReviveDialogState extends State<_ReviveDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _field(
+            inputField(
               'revive-hp',
               'Trefferpunkte danach',
               _hp,
               helper: 'Wiederbeleben, Tote erwecken: 1; Auferstehung: alle',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            _field(
+            inputField(
               'revive-source',
               'Quelle (optional)',
               _source,
               helper: 'z. B. Wiederbeleben',
             ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
           ],
         ),
       ),
@@ -1725,15 +1489,15 @@ class _ConditionDialogState extends State<_ConditionDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _field(
+            inputField(
               'condition-rounds',
               'Dauer in Runden (optional)',
               _rounds,
               helper: 'Leer: bleibt, bis der Zustand entfernt wird',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -1869,22 +1633,22 @@ class _BuffDialogState extends State<_BuffDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _field('buff-name', 'Name (z. B. Segen)', _name),
-            _field(
+            inputField('buff-name', 'Name (z. B. Segen)', _name),
+            inputField(
               'buff-attack',
               'Angriffswurf (optional)',
               _attack,
               helper: 'z. B. 1d4, -1d4 oder 2',
             ),
-            _field(
+            inputField(
               'buff-ac',
               'Rüstungsklasse (optional)',
               _armorClass,
               helper: 'z. B. 2 oder -2',
-              formatters: _signedDigits,
+              formatters: signedDigitsInput,
               number: true,
             ),
-            _field(
+            inputField(
               'buff-damage',
               'Schaden (optional)',
               _damage,
@@ -1913,21 +1677,21 @@ class _BuffDialogState extends State<_BuffDialog> {
                 onChanged: (type) => setState(() => _damageType = type),
               ),
             ),
-            _field(
+            inputField(
               'buff-saving-throw',
               'Rettungswürfe (optional)',
               _savingThrow,
               helper: 'z. B. 1d4 oder 2',
             ),
-            _field(
+            inputField(
               'buff-rounds',
               'Dauer in Runden (optional)',
               _rounds,
               helper: 'Leer: bleibt, bis der Effekt entfernt wird',
-              formatters: _digits,
+              formatters: digitsInput,
               number: true,
             ),
-            if (_errorText != null) _error(context, _errorText!),
+            if (_errorText != null) formError(context, _errorText!),
           ],
         ),
       ),
