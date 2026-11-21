@@ -493,6 +493,92 @@ Widget _field(
   );
 }
 
+/// Text field for a damage type that suggests the damage types of the
+/// rules while it has focus. Any other text is allowed as well.
+class _DamageTypeField extends StatefulWidget {
+  const _DamageTypeField({
+    required this.fieldKey,
+    required this.label,
+    required this.controller,
+    this.helper,
+  });
+
+  /// Key of the text field; suggestions get `<fieldKey>-option-<type>`.
+  final String fieldKey;
+  final String label;
+  final TextEditingController controller;
+  final String? helper;
+
+  @override
+  State<_DamageTypeField> createState() => _DamageTypeFieldState();
+}
+
+class _DamageTypeFieldState extends State<_DamageTypeField> {
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// Damage types containing the typed text; none once it is complete.
+  Iterable<String> _options(TextEditingValue value) {
+    final typed = normalizeDamageType(value.text);
+    if (damageTypes.any((type) => normalizeDamageType(type) == typed)) {
+      return const [];
+    }
+    return damageTypes.where((type) => type.toLowerCase().contains(typed));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<String>(
+      textEditingController: widget.controller,
+      focusNode: _focus,
+      optionsBuilder: _options,
+      fieldViewBuilder: (context, controller, focusNode, onSubmitted) =>
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextField(
+              key: Key(widget.fieldKey),
+              controller: controller,
+              focusNode: focusNode,
+              onSubmitted: (_) => onSubmitted(),
+              decoration: InputDecoration(
+                labelText: widget.label,
+                helperText: widget.helper,
+                isDense: true,
+              ),
+            ),
+          ),
+      optionsViewBuilder: (context, onSelected, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 240),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              children: [
+                for (final option in options)
+                  ListTile(
+                    key: Key('${widget.fieldKey}-option-$option'),
+                    dense: true,
+                    title: Text(option),
+                    onTap: () => onSelected(option),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Widget _error(BuildContext context, String message) => Padding(
   padding: const EdgeInsets.only(top: 8),
   child: Text(
@@ -544,7 +630,11 @@ class _AttackFields {
       number: true,
     ),
     _field('attack-damage', 'Schaden (z. B. 1d8+3)', damage),
-    _field('attack-type', 'Schadensart (z. B. Hieb)', type),
+    _DamageTypeField(
+      fieldKey: 'attack-type',
+      label: 'Schadensart (z. B. Hieb)',
+      controller: type,
+    ),
   ];
 
   void dispose() {
@@ -1239,10 +1329,10 @@ class _HpDialogState extends State<_HpDialog> {
               _source,
               helper: 'z. B. Feuerball, Heiltrank, Falle',
             ),
-            _field(
-              'hp-damage-type',
-              'Schadensart (optional)',
-              _damageType,
+            _DamageTypeField(
+              fieldKey: 'hp-damage-type',
+              label: 'Schadensart (optional)',
+              controller: _damageType,
               helper: 'z. B. Feuer; nur dann wirken Resistenzen',
             ),
             if (_errorText != null) _error(context, _errorText!),

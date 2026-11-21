@@ -1395,4 +1395,74 @@ void main() {
       expect(find.byKey(const Key('hp-temp-remove')), findsNothing);
     });
   });
+
+  group('Kampf-Bildschirm: Auswahl der Schadensart', () {
+    String fieldText(WidgetTester tester, String key) =>
+        tester.widget<TextField>(find.byKey(Key(key))).controller!.text;
+
+    testWidgets('Beim Anlegen eines Angriffs schlägt das Feld Schadensart die '
+        'Schadensarten der Regeln vor; ein Tipp übernimmt sie', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-attack-1');
+      await tapKey(tester, 'attack-type');
+      // The list scrolls; the first entries are visible right away.
+      expect(find.byKey(const Key('attack-type-option-Blitz')), findsOneWidget);
+      expect(find.byKey(const Key('attack-type-option-Feuer')), findsOneWidget);
+      await tapKey(tester, 'attack-type-option-Feuer');
+
+      expect(fieldText(tester, 'attack-type'), 'Feuer');
+      expect(find.byKey(const Key('attack-type-option-Blitz')), findsNothing);
+    });
+
+    testWidgets('Getippte Buchstaben grenzen die Vorschläge ein', (
+      tester,
+    ) async {
+      await Scene([]).pump(tester);
+
+      await tapKey(tester, 'add-attack-1');
+      await tapKey(tester, 'attack-type');
+      await tester.enterText(find.byKey(const Key('attack-type')), 'gl');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('attack-type-option-Gleißend')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('attack-type-option-Hieb')), findsNothing);
+    });
+
+    testWidgets('Eine eigene Schadensart bleibt möglich', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-attack-1');
+      await type(tester, 'attack-name', 'Biss');
+      await type(tester, 'attack-damage', '1d6');
+      await type(tester, 'attack-type', 'Magisch');
+      await tapKey(tester, 'attack-save');
+
+      expect(scene.goblin.attacks.single.damageType, 'Magisch');
+    });
+
+    testWidgets('Auch bei "TP ändern" wird die Schadensart '
+        'vorgeschlagen', (tester) async {
+      final scene = Scene([]);
+      scene.encounter.setDamageTrait(
+        scene.aria,
+        'Feuer',
+        DamageEffect.resistance,
+      );
+      await scene.pump(tester);
+
+      await tapKey(tester, 'hp-0');
+      await type(tester, 'hp-amount', '10');
+      await tapKey(tester, 'hp-damage-type');
+      await tapKey(tester, 'hp-damage-type-option-Feuer');
+      await tapKey(tester, 'hp-damage');
+
+      expect(scene.aria.hp, 15);
+    });
+  });
 }
