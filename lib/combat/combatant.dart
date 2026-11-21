@@ -32,6 +32,7 @@ class Combatant {
       ..hp = json['hp']! as int
       ..tempHp = json['tempHp'] as int? ?? 0
       ..initiative = json['initiative'] as int?
+      ..characterId = json['characterId'] as int?
       // Missing in states saved before death saving throws existed.
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
@@ -67,6 +68,10 @@ class Combatant {
 
   /// Initiative total of the running combat; null while no combat runs.
   int? initiative;
+
+  /// The stored character this combatant stands for; null for monsters and
+  /// combatants entered directly. Set through `Encounter.addCharacter`.
+  int? characterId;
 
   /// Player characters make death saving throws at 0 hit points; everyone
   /// else is simply out of the fight.
@@ -146,6 +151,7 @@ class Combatant {
         key: value.name,
     },
     'initiative': initiative,
+    'characterId': ?characterId,
     'attacks': [for (final attack in attacks) attack.toJson()],
   };
 }

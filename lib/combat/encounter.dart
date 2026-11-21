@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../characters/character.dart';
+import '../characters/character_repository.dart';
 import '../dice/dice_expression.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
@@ -53,18 +55,32 @@ class AttackOutcome {
 /// With a [EncounterStore] every change is saved, so the combat survives
 /// closing the app; [Encounter.load] brings it back. Without a store the
 /// state lives in memory only.
+///
+/// Combatants added with [addCharacter] stand for stored characters: with a
+/// [CharacterRepository], every change writes their hit points, temporary
+/// hit points and death saving throws back to the character.
 class Encounter {
-  Encounter({required this._log, DiceRoller? roller, this._store})
-    : _roller = roller ?? DiceRoller();
+  Encounter({
+    required this._log,
+    DiceRoller? roller,
+    this._store,
+    this._characters,
+  }) : _roller = roller ?? DiceRoller();
 
   /// The combat as it was last saved in [store]. Starts empty if nothing
   /// was saved yet or the saved state cannot be read.
   static Future<Encounter> load({
     required LogRepository log,
     required EncounterStore store,
+    CharacterRepository? characters,
     DiceRoller? roller,
   }) async {
-    final encounter = Encounter(log: log, store: store, roller: roller);
+    final encounter = Encounter(
+      log: log,
+      store: store,
+      characters: characters,
+      roller: roller,
+    );
     final state = await store.load();
     if (state != null) encounter._restore(state);
     return encounter;
@@ -73,6 +89,7 @@ class Encounter {
   final LogRepository _log;
   final DiceRoller _roller;
   final EncounterStore? _store;
+  final CharacterRepository? _characters;
 
   /// The most recent save; later saves are queued behind it.
   Future<void> _lastSave = Future.value();
@@ -112,6 +129,75 @@ class Encounter {
     _combatants.add(combatant);
     unawaited(_save());
     return combatant;
+  }
+
+  /// Adds the stored [character] as a player character with its values and
+  /// current state. What happens to the combatant from now on is written
+  /// back to the character.
+  ///
+  /// A character without id throws an [ArgumentError], one already in the
+  /// encounter a [StateError].
+  Combatant addCharacter(Character character) {
+    final id = character.id;
+    if (id == null) {
+      throw ArgumentError.value(character, 'character', 'must be saved');
+    }
+    if (hasCharacter(id)) {
+      throw StateError('${character.name} is already in the encounter');
+    }
+    final combatant =
+        Combatant(
+            name: character.name,
+            armorClass: character.armorClass,
+            maxHp: character.maxHp,
+            initiativeBonus: character.initiativeBonus,
+            isPlayer: true,
+            attacks: character.attacks,
+          )
+          ..characterId = id
+          ..hp = character.hp
+          ..tempHp = character.tempHp
+          ..deathSaveSuccesses = character.deathSaveSuccesses
+          ..deathSaveFailures = character.deathSaveFailures
+          ..isStable = character.isStable
+          ..isDead = character.isDead;
+    _combatants.add(combatant);
+    unawaited(_save());
+    return combatant;
+  }
+
+  /// Whether the character with [characterId] is in the encounter.
+  bool hasCharacter(int characterId) =>
+      _combatants.any((c) => c.characterId == characterId);
+
+  /// Takes over changed sheet values of [character] (name, armor class,
+  /// maximum hit points, initiative bonus, attacks) for its combatant. Hit
+  /// points stay as they are in the combat (see [edit]). Does nothing if
+  /// the character is not in the encounter.
+  void applyCharacter(Character character) {
+    final combatant = _combatants
+        .where((c) => c.characterId != null && c.characterId == character.id)
+        .firstOrNull;
+    if (combatant == null) return;
+    combatant.attacks
+      ..clear()
+      ..addAll(character.attacks);
+    edit(
+      combatant,
+      name: character.name,
+      armorClass: character.armorClass,
+      maxHp: character.maxHp,
+      initiativeBonus: character.initiativeBonus,
+    );
+  }
+
+  /// Unlinks the combatant of the character with [characterId], e.g. after
+  /// the character was deleted. The combatant stays in the encounter.
+  void forgetCharacter(int characterId) {
+    for (final combatant in _combatants) {
+      if (combatant.characterId == characterId) combatant.characterId = null;
+    }
+    unawaited(_save());
   }
 
   void remove(Combatant combatant) {
@@ -385,16 +471,36 @@ class Encounter {
   /// Completes when every change made so far is saved.
   Future<void> flush() => _lastSave;
 
-  /// Saves the current state. Saves run one after the other, so the last
-  /// change always wins.
+  /// Saves the current state and writes the state of linked combatants back
+  /// to their characters. Saves run one after the other, so the last change
+  /// always wins.
   Future<void> _save() {
     final store = _store;
-    if (store == null) return _lastSave;
+    final characters = _characters;
+    if (store == null && characters == null) return _lastSave;
     final state = _toJson();
+    // Taken now, so a later change cannot sneak into this save.
+    final linked = [
+      for (final combatant in _combatants)
+        if (combatant.characterId case final id?) (id, combatant.toJson()),
+    ];
     // A failed earlier save must not block this one.
-    return _lastSave = _lastSave
-        .catchError((Object _) {})
-        .then((_) => store.save(state));
+    return _lastSave = _lastSave.catchError((Object _) {}).then((_) async {
+      if (store != null) await store.save(state);
+      if (characters == null) return;
+      for (final (id, combatant) in linked) {
+        final character = await characters.byId(id);
+        if (character == null) continue;
+        character
+          ..hp = combatant['hp']! as int
+          ..tempHp = combatant['tempHp']! as int
+          ..deathSaveSuccesses = combatant['deathSaveSuccesses']! as int
+          ..deathSaveFailures = combatant['deathSaveFailures']! as int
+          ..isStable = combatant['isStable']! as bool
+          ..isDead = combatant['isDead']! as bool;
+        await characters.save(character);
+      }
+    });
   }
 
   Map<String, Object?> _toJson() => {
