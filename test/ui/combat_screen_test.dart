@@ -1,3 +1,5 @@
+import 'package:dmployee/characters/character.dart';
+import 'package:dmployee/characters/character_repository.dart';
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/buff.dart';
 import 'package:dmployee/combat/combatant.dart';
@@ -9,6 +11,7 @@ import 'package:dmployee/dice/dice_expression.dart';
 import 'package:dmployee/dice/dice_roller.dart';
 import 'package:dmployee/log/log_event.dart';
 import 'package:dmployee/log/log_repository.dart';
+import 'package:dmployee/ui/character_edit_screen.dart';
 import 'package:dmployee/ui/combat_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -1522,6 +1525,103 @@ void main() {
 
       expect(find.byKey(const Key('form-error')), findsOneWidget);
       expect(scene.aria.isDead, isTrue);
+    });
+  });
+
+  group('Kampf-Bildschirm: gespeicherte Charaktere', () {
+    /// Combat screen with a character repository holding Borin; the
+    /// encounter writes back to it. [prepare] runs before the screen is
+    /// shown.
+    Future<(Encounter, InMemoryCharacterRepository, Character)> pumpWithBorin(
+      WidgetTester tester, {
+      void Function(Encounter encounter, Character borin)? prepare,
+    }) async {
+      final characters = InMemoryCharacterRepository();
+      final borin = await characters.save(
+        Character(
+          name: 'Borin',
+          characterClass: 'Kleriker',
+          level: 3,
+          maxHp: 24,
+          armorClass: 18,
+          attacks: [longsword],
+        ),
+      );
+      final encounter = Encounter(
+        log: InMemoryLogRepository(),
+        characters: characters,
+      );
+      prepare?.call(encounter, borin);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CombatScreen(encounter: encounter, characters: characters),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return (encounter, characters, borin);
+    }
+
+    testWidgets('Ohne Charakter-Speicher gibt es keinen Knopf für '
+        'Charaktere', (tester) async {
+      await Scene([]).pump(tester);
+
+      expect(find.byKey(const Key('add-character')), findsNothing);
+    });
+
+    testWidgets('Ein gespeicherter Charakter lässt sich aus einer Liste in '
+        'den Kampf holen', (tester) async {
+      final (encounter, _, borin) = await pumpWithBorin(tester);
+
+      await tapKey(tester, 'add-character');
+      await tapKey(tester, 'pick-character-0');
+
+      expect(encounter.hasCharacter(borin.id!), isTrue);
+      expect(textOf(tester, 'name-0'), 'Borin');
+      expect(textOf(tester, 'stats-0'), 'RK 18 · TP 24/24');
+    });
+
+    testWidgets('Charaktere, die schon im Kampf sind, stehen nicht in der '
+        'Liste', (tester) async {
+      await pumpWithBorin(
+        tester,
+        prepare: (encounter, borin) => encounter.addCharacter(borin),
+      );
+
+      await tapKey(tester, 'add-character');
+
+      expect(find.byKey(const Key('pick-character-0')), findsNothing);
+      expect(find.text('Alle Charaktere sind schon im Kampf.'), findsOneWidget);
+    });
+
+    testWidgets('Das Stift-Symbol eines Charakters öffnet seinen '
+        'Charakterbogen; Änderungen gelten sofort im Kampf', (tester) async {
+      await pumpWithBorin(
+        tester,
+        prepare: (encounter, borin) => encounter.addCharacter(borin),
+      );
+
+      await tapKey(tester, 'edit-0');
+      expect(find.byType(CharacterEditScreen), findsOneWidget);
+      await type(tester, 'character-ac', '20');
+      await tapKey(tester, 'character-save');
+
+      expect(textOf(tester, 'stats-0'), 'RK 20 · TP 24/24');
+    });
+
+    testWidgets('Bei einem Charakter fehlt der Knopf "Angriff"; Angriffe '
+        'kommen aus dem Charakterbogen', (tester) async {
+      await pumpWithBorin(
+        tester,
+        prepare: (encounter, borin) {
+          encounter
+            ..addCharacter(borin)
+            ..add(name: 'Goblin', armorClass: 13, maxHp: 7);
+        },
+      );
+
+      expect(find.byKey(const Key('add-attack-0')), findsNothing);
+      expect(find.byKey(const Key('add-attack-1')), findsOneWidget);
+      expect(find.byKey(const Key('attack-0-0')), findsOneWidget);
     });
   });
 }

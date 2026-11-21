@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../log/log_formatter.dart';
 import '../log/log_repository.dart';
+import 'menu_button.dart';
 
 /// Shows the log, newest entry first. Values with details can be tapped to
 /// see how they came about. Entries can be filtered by session.
@@ -10,7 +11,11 @@ class LogScreen extends StatefulWidget {
     super.key,
     required this.log,
     this.formatter = const LogFormatter(),
+    this.onOpenMenu,
   });
+
+  /// Opens the app menu; without it the app bar has no menu button.
+  final VoidCallback? onOpenMenu;
 
   final LogRepository log;
   final LogFormatter formatter;
@@ -91,6 +96,7 @@ class _LogScreenState extends State<LogScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: menuButton(widget.onOpenMenu),
         title: const Text('Log'),
         actions: [
           IconButton(

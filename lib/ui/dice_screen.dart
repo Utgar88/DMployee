@@ -7,6 +7,7 @@ import '../dice/modifier.dart';
 import '../log/log_event.dart';
 import '../log/log_repository.dart';
 import '../log/roll_record.dart';
+import 'menu_button.dart';
 
 /// One finished roll as shown in the result card, plus the event written to
 /// the log for it.
@@ -31,11 +32,18 @@ class _RollEntry {
 ///
 /// Every roll is written to the [log] as a free roll.
 class DiceScreen extends StatefulWidget {
-  DiceScreen({super.key, required this.log, DiceRoller? roller})
-    : roller = roller ?? DiceRoller();
+  DiceScreen({
+    super.key,
+    required this.log,
+    DiceRoller? roller,
+    this.onOpenMenu,
+  }) : roller = roller ?? DiceRoller();
 
   final LogRepository log;
   final DiceRoller roller;
+
+  /// Opens the app menu; without it the app bar has no menu button.
+  final VoidCallback? onOpenMenu;
 
   static const dice = [4, 6, 8, 10, 12, 20, 100];
 
@@ -128,7 +136,10 @@ class _DiceScreenState extends State<DiceScreen> {
     final latest = _latest;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Würfler')),
+      appBar: AppBar(
+        leading: menuButton(widget.onOpenMenu),
+        title: const Text('Würfler'),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),

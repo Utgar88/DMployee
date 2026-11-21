@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dmployee/characters/character_repository.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/log/log_repository.dart';
 import 'package:dmployee/main.dart';
@@ -11,6 +12,7 @@ AppData appData() {
   final log = InMemoryLogRepository();
   return (
     log: log,
+    characters: InMemoryCharacterRepository(),
     encounter: Encounter(log: log)
       ..add(name: 'Aria', armorClass: 16, maxHp: 20),
   );

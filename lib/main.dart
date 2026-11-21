@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'characters/character_repository.dart';
+import 'characters/sqlite_character_repository.dart';
 import 'combat/encounter.dart';
 import 'combat/sqlite_encounter_store.dart';
 import 'log/log_repository.dart';
@@ -11,7 +13,11 @@ import 'ui/home_screen.dart';
 import 'ui/startup_screen.dart';
 
 /// Everything the app loads from the device before it can be used.
-typedef AppData = ({LogRepository log, Encounter encounter});
+typedef AppData = ({
+  LogRepository log,
+  CharacterRepository characters,
+  Encounter encounter,
+});
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,11 +30,13 @@ Future<AppData> _openStorage() async {
     path: p.join(await getDatabasesPath(), 'dmployee.db'),
   );
   final log = SqliteLogRepository(database);
+  final characters = SqliteCharacterRepository(database);
   final encounter = await Encounter.load(
     log: log,
     store: SqliteEncounterStore(database),
+    characters: characters,
   );
-  return (log: log, encounter: encounter);
+  return (log: log, characters: characters, encounter: encounter);
 }
 
 class DMployeeApp extends StatelessWidget {
@@ -37,6 +45,7 @@ class DMployeeApp extends StatelessWidget {
   const DMployeeApp({
     super.key,
     required LogRepository this.log,
+    this.characters,
     this.encounter,
   }) : load = null,
        minimumSplash = Duration.zero;
@@ -48,9 +57,13 @@ class DMployeeApp extends StatelessWidget {
     required Future<AppData> Function() this.load,
     this.minimumSplash = const Duration(milliseconds: 1500),
   }) : log = null,
+       characters = null,
        encounter = null;
 
   final LogRepository? log;
+
+  /// Stored player characters; kept in memory if omitted.
+  final CharacterRepository? characters;
 
   /// The combat restored from the last run, if any.
   final Encounter? encounter;
@@ -71,12 +84,15 @@ class DMployeeApp extends StatelessWidget {
         ),
       ),
       home: load == null
-          ? HomeScreen(log: log!, encounter: encounter)
+          ? HomeScreen(log: log!, characters: characters, encounter: encounter)
           : StartupScreen<AppData>(
               load: load!,
               minimumDuration: minimumSplash,
-              builder: (context, data) =>
-                  HomeScreen(log: data.log, encounter: data.encounter),
+              builder: (context, data) => HomeScreen(
+                log: data.log,
+                characters: data.characters,
+                encounter: data.encounter,
+              ),
             ),
     );
   }

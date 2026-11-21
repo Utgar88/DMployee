@@ -10,6 +10,10 @@ import '../dice/dice_roller.dart';
 import '../log/log_event.dart';
 import '../log/log_formatter.dart';
 import 'form_widgets.dart';
+import '../characters/character.dart';
+import '../characters/character_repository.dart';
+import 'character_edit_screen.dart';
+import 'menu_button.dart';
 
 /// Combat screen: set up combatants, roll initiative, step through turns and
 /// resolve attacks. All rules live in [Encounter]; this is only the surface.
@@ -17,11 +21,20 @@ class CombatScreen extends StatefulWidget {
   const CombatScreen({
     super.key,
     required this.encounter,
+    this.characters,
     this.formatter = const LogFormatter(),
+    this.onOpenMenu,
   });
 
   final Encounter encounter;
+
+  /// Stored player characters that can join the combat; without them the
+  /// screen offers no characters.
+  final CharacterRepository? characters;
   final LogFormatter formatter;
+
+  /// Opens the app menu; without it the app bar has no menu button.
+  final VoidCallback? onOpenMenu;
 
   @override
   State<CombatScreen> createState() => _CombatScreenState();
@@ -41,7 +54,73 @@ class _CombatScreenState extends State<CombatScreen> {
     if (added ?? false) setState(() {});
   }
 
+  Future<void> _addCharacter() async {
+    final characters = await widget.characters!.all();
+    if (!mounted) return;
+    final available = [
+      for (final character in characters)
+        if (!_encounter.hasCharacter(character.id!)) character,
+    ];
+    final picked = await showDialog<Character>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Charakter hinzufügen'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (characters.isEmpty)
+                const Text(
+                  'Noch keine Charaktere angelegt. Das geht über das Menü '
+                  'unter "Charaktere".',
+                )
+              else if (available.isEmpty)
+                const Text('Alle Charaktere sind schon im Kampf.'),
+              for (final (index, character) in available.indexed)
+                ListTile(
+                  key: Key('pick-character-$index'),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(character.name),
+                  subtitle: Text(
+                    '${character.classAndLevel} · '
+                    'TP ${character.hp}/${character.maxHp}',
+                  ),
+                  onTap: () => Navigator.pop(context, character),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) setState(() => _encounter.addCharacter(picked));
+  }
+
   Future<void> _editCombatant(Combatant combatant) async {
+    final characterId = combatant.characterId;
+    final characters = widget.characters;
+    if (characterId != null && characters != null) {
+      final character = await characters.byId(characterId);
+      if (character == null || !mounted) return;
+      await Navigator.push<Character>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CharacterEditScreen(
+            characters: characters,
+            encounter: _encounter,
+            character: character,
+          ),
+        ),
+      );
+      if (mounted) setState(() {});
+      return;
+    }
     final edited = await showDialog<bool>(
       context: context,
       builder: (context) =>
@@ -190,8 +269,16 @@ class _CombatScreenState extends State<CombatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: menuButton(widget.onOpenMenu),
         title: const Text('Kampf'),
         actions: [
+          if (widget.characters != null)
+            IconButton(
+              key: const Key('add-character'),
+              tooltip: 'Charakter hinzufügen',
+              onPressed: _addCharacter,
+              icon: const Icon(Icons.group_add_outlined),
+            ),
           IconButton(
             key: const Key('add-combatant'),
             tooltip: 'Kämpfer hinzufügen',
@@ -434,12 +521,14 @@ class _CombatScreenState extends State<CombatScreen> {
                     label: Text(attack.summary),
                     onPressed: () => _attack(combatant, attack),
                   ),
-                TextButton.icon(
-                  key: Key('add-attack-$index'),
-                  onPressed: () => _addAttack(combatant),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Angriff'),
-                ),
+                // Attacks of a character come from the character sheet.
+                if (combatant.characterId == null)
+                  TextButton.icon(
+                    key: Key('add-attack-$index'),
+                    onPressed: () => _addAttack(combatant),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Angriff'),
+                  ),
                 TextButton.icon(
                   key: Key('add-condition-$index'),
                   onPressed: () => _addCondition(combatant),
