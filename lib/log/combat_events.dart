@@ -35,6 +35,50 @@ class ConditionEffect {
   };
 }
 
+/// Damage of a hit that has its own damage type, apart from the attack's:
+/// e.g. the necrotic `+1d6` of Verhexen on a sword hit. Each effect adds
+/// one modifier with its rolled value.
+class ExtraDamage {
+  const ExtraDamage({
+    required this.damageType,
+    required this.modifiers,
+    this.damageEffect,
+  });
+
+  factory ExtraDamage.fromJson(Map<String, Object?> json) {
+    return ExtraDamage(
+      damageType: json['damageType']! as String,
+      modifiers: [
+        for (final modifier in json['modifiers']! as List)
+          Modifier.fromJson((modifier as Map).cast<String, Object?>()),
+      ],
+      damageEffect: DamageEffect.fromName(json['damageEffect']),
+    );
+  }
+
+  final String damageType;
+  final List<Modifier> modifiers;
+
+  /// Resistance, vulnerability or immunity of the target against
+  /// [damageType].
+  final DamageEffect? damageEffect;
+
+  /// Damage as rolled, before [damageEffect]; never negative.
+  int get rolled {
+    final sum = Modifier.sum(modifiers);
+    return sum < 0 ? 0 : sum;
+  }
+
+  /// Damage dealt, after [damageEffect].
+  int get damage => adjustDamage(rolled, damageEffect);
+
+  Map<String, Object?> toJson() => {
+    'damageType': damageType,
+    'modifiers': [for (final modifier in modifiers) modifier.toJson()],
+    'damageEffect': ?damageEffect?.name,
+  };
+}
+
 /// One attack: who attacked whom with what, the attack roll and, on a hit,
 /// the damage roll. Names and armor class are stored as they were at that
 /// moment.
@@ -51,6 +95,7 @@ class AttackEvent extends LogEvent {
     this.damageRoll,
     this.damage = 0,
     this.damageEffect,
+    this.extraDamage = const [],
     this.conditionEffects = const [],
     this.armorClassModifiers = const [],
     this._chosenMode,
@@ -69,6 +114,10 @@ class AttackEvent extends LogEvent {
       damageRoll: json['damageRoll'] == null ? null : _roll(json['damageRoll']),
       damage: json['damage']! as int,
       damageEffect: DamageEffect.fromName(json['damageEffect']),
+      extraDamage: [
+        for (final extra in json['extraDamage'] as List? ?? const [])
+          ExtraDamage.fromJson((extra as Map).cast<String, Object?>()),
+      ],
       conditionEffects: [
         for (final effect in json['conditionEffects'] as List? ?? const [])
           ConditionEffect.fromJson((effect as Map).cast<String, Object?>()),
@@ -103,8 +152,13 @@ class AttackEvent extends LogEvent {
   /// Null when the attack missed.
   final RollRecord? damageRoll;
 
-  /// Damage dealt after [damageEffect], never negative.
+  /// Total damage dealt: the attack's own damage after [damageEffect]
+  /// plus all [extraDamage]. Never negative.
   final int damage;
+
+  /// Damage of other types from effects on the attacker; empty if there is
+  /// none.
+  final List<ExtraDamage> extraDamage;
 
   /// Resistance, vulnerability or immunity of the target against
   /// [damageType]; null if the rolled damage counted as it was.
@@ -119,7 +173,8 @@ class AttackEvent extends LogEvent {
   /// [conditionEffects] it led to the mode the [attackRoll] was made with.
   RollMode get chosenMode => _chosenMode ?? attackRoll.mode;
 
-  /// Damage as rolled, before [damageEffect]. 0 on a miss.
+  /// The attack's own damage as rolled, before [damageEffect]. 0 on a
+  /// miss.
   int get rolledDamage {
     final total = damageRoll?.total ?? 0;
     return total < 0 ? 0 : total;
@@ -141,6 +196,8 @@ class AttackEvent extends LogEvent {
     'damageRoll': ?damageRoll?.toJson(),
     'damage': damage,
     'damageEffect': ?damageEffect?.name,
+    if (extraDamage.isNotEmpty)
+      'extraDamage': [for (final extra in extraDamage) extra.toJson()],
     if (conditionEffects.isNotEmpty)
       'conditionEffects': [
         for (final effect in conditionEffects) effect.toJson(),
@@ -481,6 +538,9 @@ class BuffEvent extends LogEvent {
     required this.change,
     this.attackBonus,
     this.armorClassBonus = 0,
+    this.damageBonus,
+    this.damageType,
+    this.saveBonus,
     this.rounds,
   });
 
@@ -492,6 +552,9 @@ class BuffEvent extends LogEvent {
           EffectChange.values.asNameMap()[json['change']] ?? EffectChange.added,
       attackBonus: json['attackBonus'] as String?,
       armorClassBonus: json['armorClassBonus'] as int? ?? 0,
+      damageBonus: json['damageBonus'] as String?,
+      damageType: json['damageType'] as String?,
+      saveBonus: json['saveBonus'] as String?,
       rounds: json['rounds'] as int?,
     );
   }
@@ -509,6 +572,14 @@ class BuffEvent extends LogEvent {
   final String? attackBonus;
   final int armorClassBonus;
 
+  /// Bonus on damage as text, e.g. `+1d6`, with its own [damageType] if it
+  /// has one.
+  final String? damageBonus;
+  final String? damageType;
+
+  /// Bonus on saving throws as text, e.g. `+1d4`.
+  final String? saveBonus;
+
   /// Duration in rounds the effect was given with, if any.
   final int? rounds;
 
@@ -522,6 +593,9 @@ class BuffEvent extends LogEvent {
     'change': change.name,
     'attackBonus': ?attackBonus,
     'armorClassBonus': armorClassBonus,
+    'damageBonus': ?damageBonus,
+    'damageType': ?damageType,
+    'saveBonus': ?saveBonus,
     'rounds': ?rounds,
   };
 }

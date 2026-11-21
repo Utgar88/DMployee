@@ -186,9 +186,12 @@ class Encounter {
   }
 
   /// Gives [combatant] an effect called [name]: a bonus or penalty on
-  /// attack rolls and/or armor class, optionally for a number of [rounds]
-  /// (see [nextTurn]). Effects of the same name do not stack; the new one
-  /// replaces the old one.
+  /// attack rolls, armor class, damage and/or saving throws, optionally for
+  /// a number of [rounds] (see [nextTurn]). Effects of the same name do not
+  /// stack; the new one replaces the old one.
+  ///
+  /// The [damageBonus] has the type of the attack unless a [damageType] is
+  /// given.
   ///
   /// An empty [name] or [rounds] below 1 throws an [ArgumentError] and
   /// changes nothing.
@@ -197,6 +200,9 @@ class Encounter {
     required String name,
     Bonus? attackBonus,
     int armorClassBonus = 0,
+    Bonus? damageBonus,
+    String? damageType,
+    Bonus? saveBonus,
     int? rounds,
   }) async {
     final trimmed = name.trim();
@@ -206,10 +212,14 @@ class Encounter {
     if (rounds != null && rounds < 1) {
       throw ArgumentError.value(rounds, 'rounds', 'must be at least 1');
     }
+    final type = damageType?.trim();
     final buff = Buff(
       name: trimmed,
       attackBonus: attackBonus,
       armorClassBonus: armorClassBonus,
+      damageBonus: damageBonus,
+      damageType: type == null || type.isEmpty ? null : type,
+      saveBonus: saveBonus,
       roundsLeft: rounds,
     );
     combatant.buffs
@@ -234,6 +244,9 @@ class Encounter {
       change: change,
       attackBonus: buff.attackBonus?.toString(),
       armorClassBonus: buff.armorClassBonus,
+      damageBonus: buff.damageBonus?.toString(),
+      damageType: buff.damageType,
+      saveBonus: buff.saveBonus?.toString(),
       rounds: change == EffectChange.added ? buff.roundsLeft : null,
     );
   }
@@ -419,10 +432,17 @@ class Encounter {
   /// false. Any advantage together with any disadvantage cancels out.
   ///
   /// Effects on the attacker add their bonus to the attack roll (bonus dice
-  /// are rolled before the d20); effects on the target change the armor
-  /// class the attack has to reach.
+  /// are rolled before the d20) and to the damage of a hit (bonus dice are
+  /// rolled after the damage dice and doubled on a critical hit). Damage
+  /// bonuses with their own damage type are kept apart as
+  /// [AttackEvent.extraDamage]; resistances apply to each damage type
+  /// separately. Effects on the attacker in [ignoredBuffs] do not count for
+  /// this attack, e.g. Mal des Jägers against a creature that is not
+  /// marked. Effects on the target change the armor class the attack has to
+  /// reach.
   ///
-  /// [manualBuffRolls] holds bonus dice rolled at the table, per effect.
+  /// [manualBuffRolls] holds bonus dice for the attack roll rolled at the
+  /// table, [manualBuffDamage] those for the damage, per effect.
   /// [manualAttackRoll] is the counting d20 rolled at the table,
   /// [manualDamage] the sum of the damage dice without the damage bonus.
   /// Impossible values throw an [ArgumentError] and change nothing.
@@ -434,8 +454,14 @@ class Encounter {
     int? manualAttackRoll,
     int? manualDamage,
     Map<Buff, int> manualBuffRolls = const {},
+    Map<Buff, int> manualBuffDamage = const {},
+    Set<Buff> ignoredBuffs = const {},
     bool applyConditions = true,
   }) async {
+    final buffs = [
+      for (final buff in attacker.buffs)
+        if (!ignoredBuffs.contains(buff)) buff,
+    ];
     final conditionEffects = applyConditions
         ? _conditionEffects(attacker, target)
         : const <ConditionEffect>[];
@@ -450,7 +476,7 @@ class Encounter {
 
     final attackModifiers = [
       Modifier('Angriffsbonus', attack.attackBonus),
-      for (final buff in attacker.buffs)
+      for (final buff in buffs)
         if (buff.attackBonus case final bonus?)
           _buffModifier(buff.name, bonus, manualBuffRolls[buff]),
     ];
@@ -476,14 +502,57 @@ class Encounter {
 
     RollRecord? damageRoll;
     DamageEffect? damageEffect;
+    var extraDamage = const <ExtraDamage>[];
     var damage = 0;
     if (hit) {
-      damageRoll = _rollDamage(attack, critical, manualDamage);
-      damageEffect = target.damageEffectFor(attack.damageType);
-      damage = adjustDamage(
-        damageRoll.total < 0 ? 0 : damageRoll.total,
-        damageEffect,
+      final weaponRoll = _rollDamage(attack, critical, manualDamage);
+      // Bonus damage per damage type; null stands for the attack's type.
+      final bonusByType = <String?, List<Modifier>>{};
+      final typeNames = <String, String>{};
+      for (final buff in buffs) {
+        final bonus = buff.damageBonus;
+        if (bonus == null) continue;
+        final modifier = _buffModifier(
+          buff.name,
+          bonus,
+          manualBuffDamage[buff],
+          diceFactor: critical ? 2 : 1,
+          parameter: 'manualBuffDamage',
+        );
+        final type = buff.damageType;
+        final key =
+            type == null ||
+                normalizeDamageType(type) ==
+                    normalizeDamageType(attack.damageType)
+            ? null
+            : normalizeDamageType(type);
+        if (key != null) typeNames.putIfAbsent(key, () => type!);
+        bonusByType.putIfAbsent(key, () => []).add(modifier);
+      }
+
+      damageRoll = RollRecord(
+        count: weaponRoll.count,
+        sides: weaponRoll.sides,
+        rolls: weaponRoll.rolls,
+        manual: weaponRoll.manual,
+        modifiers: [...weaponRoll.modifiers, ...?bonusByType[null]],
       );
+      damageEffect = target.damageEffectFor(attack.damageType);
+      extraDamage = [
+        for (final MapEntry(:key, :value) in bonusByType.entries)
+          if (key != null)
+            ExtraDamage(
+              damageType: typeNames[key]!,
+              modifiers: value,
+              damageEffect: target.damageEffectFor(key),
+            ),
+      ];
+      damage =
+          adjustDamage(
+            damageRoll.total < 0 ? 0 : damageRoll.total,
+            damageEffect,
+          ) +
+          extraDamage.fold(0, (sum, extra) => sum + extra.damage);
     }
 
     // Everything is rolled and validated; only now change state and log.
@@ -504,6 +573,7 @@ class Encounter {
       damageRoll: damageRoll,
       damage: damage,
       damageEffect: damageEffect,
+      extraDamage: extraDamage,
       conditionEffects: conditionEffects,
       chosenMode: mode,
     );
@@ -662,19 +732,29 @@ class Encounter {
   /// as two failures, a natural 20 brings the character back with 1 hit
   /// point. Three successes make the character stable, three failures kill.
   ///
-  /// [manualRoll] is the d20 rolled at the table. A value outside 1 to 20
-  /// throws an [ArgumentError], a [combatant] who is not dying a
-  /// [StateError]; both change nothing.
+  /// Effects with a bonus on saving throws add it to the total (bonus dice
+  /// are rolled before the d20); natural 1 and 20 still count as such.
+  ///
+  /// [manualRoll] is the d20 rolled at the table, [manualBuffRolls] holds
+  /// bonus dice rolled at the table, per effect. Impossible values throw an
+  /// [ArgumentError], a [combatant] who is not dying a [StateError]; both
+  /// change nothing.
   Future<DeathSaveEvent> rollDeathSave(
     Combatant combatant, {
     int? manualRoll,
+    Map<Buff, int> manualBuffRolls = const {},
   }) async {
     if (!combatant.isDying) {
       throw StateError('${combatant.name} is not dying');
     }
+    final modifiers = [
+      for (final buff in combatant.buffs)
+        if (buff.saveBonus case final bonus?)
+          _buffModifier(buff.name, bonus, manualBuffRolls[buff]),
+    ];
     final roll = manualRoll != null
-        ? RollRecord.manualD20(manualRoll)
-        : RollRecord.fromD20(_roller.rollD20());
+        ? RollRecord.manualD20(manualRoll, modifiers: modifiers)
+        : RollRecord.fromD20(_roller.rollD20(modifiers: modifiers));
 
     LogEvent? consequence;
     if (roll.isNatural20) {
@@ -711,24 +791,33 @@ class Encounter {
     return event;
   }
 
-  /// The attack roll modifier from an effect called [name]: a fixed value,
-  /// or bonus dice rolled by the app or typed in as [manual].
-  Modifier _buffModifier(String name, Bonus bonus, int? manual) {
+  /// The modifier from an effect called [name]: a fixed value, or bonus
+  /// dice rolled by the app or typed in as [manual]. [diceFactor] 2 doubles
+  /// the number of dice for a critical hit.
+  Modifier _buffModifier(
+    String name,
+    Bonus bonus,
+    int? manual, {
+    int diceFactor = 1,
+    String parameter = 'manualBuffRolls',
+  }) {
     if (!bonus.isDice) return Modifier(name, bonus.signed(bonus.flat));
+    final count = bonus.count * diceFactor;
+    final dice = '${count}d${bonus.sides}';
     if (manual == null) {
       final rolled = _roller.roll(
-        DiceExpression(count: bonus.count, sides: bonus.sides),
+        DiceExpression(count: count, sides: bonus.sides),
       );
-      return Modifier('$name (${bonus.dice})', bonus.signed(rolled.total));
+      return Modifier('$name ($dice)', bonus.signed(rolled.total));
     }
-    if (manual < bonus.count || manual > bonus.count * bonus.sides) {
+    if (manual < count || manual > count * bonus.sides) {
       throw ArgumentError.value(
         manual,
-        'manualBuffRolls',
-        '${bonus.dice} shows ${bonus.count} to ${bonus.count * bonus.sides}',
+        parameter,
+        '$dice shows $count to ${count * bonus.sides}',
       );
     }
-    return Modifier('$name (${bonus.dice} von Hand)', bonus.signed(manual));
+    return Modifier('$name ($dice von Hand)', bonus.signed(manual));
   }
 
   /// Conditions that give advantage or disadvantage when [attacker]

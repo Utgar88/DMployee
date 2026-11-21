@@ -858,12 +858,27 @@ class _TargetDialogState extends State<_TargetDialog> {
   final _manualAttack = TextEditingController();
   final _manualDamage = TextEditingController();
 
-  /// The attacker's effects with bonus dice, each with a field for a die
-  /// rolled at the table.
+  /// The attacker's effects with bonus dice on the attack roll, each with a
+  /// field for the dice rolled at the table.
   late final _buffDice = {
     for (final buff in widget.attacker.buffs)
       if (buff.attackBonus?.isDice ?? false) buff: TextEditingController(),
   };
+
+  /// The same for bonus dice on the damage.
+  late final _buffDamageDice = {
+    for (final buff in widget.attacker.buffs)
+      if (buff.damageBonus?.isDice ?? false) buff: TextEditingController(),
+  };
+
+  /// The attacker's effects that change this attack and can be deselected.
+  late final _attackBuffs = [
+    for (final buff in widget.attacker.buffs)
+      if (buff.attackBonus != null || buff.damageBonus != null) buff,
+  ];
+
+  /// Effects the game master deselected for this attack.
+  final _ignoredBuffs = <Buff>{};
   RollMode _mode = RollMode.normal;
   bool _applyConditions = true;
   String? _errorText;
@@ -872,7 +887,7 @@ class _TargetDialogState extends State<_TargetDialog> {
   void dispose() {
     _manualAttack.dispose();
     _manualDamage.dispose();
-    for (final controller in _buffDice.values) {
+    for (final controller in [..._buffDice.values, ..._buffDamageDice.values]) {
       controller.dispose();
     }
     super.dispose();
@@ -892,6 +907,12 @@ class _TargetDialogState extends State<_TargetDialog> {
               in _buffDice.entries)
             buff: ?int.tryParse(controller.text),
         },
+        manualBuffDamage: {
+          for (final MapEntry(key: buff, value: controller)
+              in _buffDamageDice.entries)
+            buff: ?int.tryParse(controller.text),
+        },
+        ignoredBuffs: _ignoredBuffs,
         applyConditions: _applyConditions,
       );
       if (mounted) Navigator.pop(context, _AttackResult(target, outcome));
@@ -955,6 +976,27 @@ class _TargetDialogState extends State<_TargetDialog> {
                 '${_attackerNote(active.condition)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+            if (_attackBuffs.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Effekte bei diesem Angriff',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              for (final (index, buff) in _attackBuffs.indexed)
+                CheckboxListTile(
+                  key: Key('attack-buff-$index'),
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(buff.summary),
+                  value: !_ignoredBuffs.contains(buff),
+                  onChanged: (applies) => setState(
+                    () => applies ?? false
+                        ? _ignoredBuffs.remove(buff)
+                        : _ignoredBuffs.add(buff),
+                  ),
+                ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Am Tisch gewürfelt? (optional)',
@@ -970,14 +1012,15 @@ class _TargetDialogState extends State<_TargetDialog> {
             ),
             for (final (index, MapEntry(key: buff, value: controller))
                 in _buffDice.entries.indexed)
-              _field(
-                'manual-buff-$index',
-                '${buff.name} (${buff.attackBonus!.dice})',
-                controller,
-                helper: 'Augensumme des Bonuswürfels',
-                formatters: _digits,
-                number: true,
-              ),
+              if (!_ignoredBuffs.contains(buff))
+                _field(
+                  'manual-buff-$index',
+                  '${buff.name} (Angriff ${buff.attackBonus!.dice})',
+                  controller,
+                  helper: 'Augensumme des Bonuswürfels',
+                  formatters: _digits,
+                  number: true,
+                ),
             _field(
               'manual-damage',
               'Schadenswürfel (Summe)',
@@ -986,6 +1029,19 @@ class _TargetDialogState extends State<_TargetDialog> {
               formatters: _digits,
               number: true,
             ),
+            for (final (index, MapEntry(key: buff, value: controller))
+                in _buffDamageDice.entries.indexed)
+              if (!_ignoredBuffs.contains(buff))
+                _field(
+                  'manual-buff-damage-$index',
+                  '${buff.name} (Schaden ${buff.damageBonus!.dice})',
+                  controller,
+                  helper:
+                      'Augensumme; bei kritischem Treffer doppelt so viele '
+                      'Würfel',
+                  formatters: _digits,
+                  number: true,
+                ),
             if (_errorText != null) _error(context, _errorText!),
             const SizedBox(height: 8),
             Text('Ziel wählen', style: Theme.of(context).textTheme.titleSmall),
@@ -1146,11 +1202,21 @@ class _DeathSaveDialog extends StatefulWidget {
 
 class _DeathSaveDialogState extends State<_DeathSaveDialog> {
   final _manual = TextEditingController();
+
+  /// Effects with bonus dice on saving throws, each with a field for the
+  /// dice rolled at the table.
+  late final _buffDice = {
+    for (final buff in widget.combatant.buffs)
+      if (buff.saveBonus?.isDice ?? false) buff: TextEditingController(),
+  };
   String? _errorText;
 
   @override
   void dispose() {
     _manual.dispose();
+    for (final controller in _buffDice.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -1159,10 +1225,18 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
       final event = await widget.encounter.rollDeathSave(
         widget.combatant,
         manualRoll: int.tryParse(_manual.text),
+        manualBuffRolls: {
+          for (final MapEntry(key: buff, value: controller)
+              in _buffDice.entries)
+            buff: ?int.tryParse(controller.text),
+        },
       );
       if (mounted) Navigator.pop(context, event);
     } on ArgumentError {
-      setState(() => _errorText = 'Ein d20 zeigt 1 bis 20.');
+      setState(
+        () => _errorText =
+            'Ein eingetragener Wert ist mit diesen Würfeln nicht möglich.',
+      );
     }
   }
 
@@ -1190,6 +1264,22 @@ class _DeathSaveDialogState extends State<_DeathSaveDialog> {
               formatters: _digits,
               number: true,
             ),
+            for (final (index, MapEntry(key: buff, value: controller))
+                in _buffDice.entries.indexed)
+              _field(
+                'manual-death-save-buff-$index',
+                '${buff.name} (${buff.saveBonus!.dice})',
+                controller,
+                helper: 'Augensumme des Bonuswürfels, optional',
+                formatters: _digits,
+                number: true,
+              ),
+            for (final buff in widget.combatant.buffs)
+              if (buff.saveBonus case final bonus? when !bonus.isDice)
+                Text(
+                  '${buff.name}: $bonus auf den Wurf',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
             if (_errorText != null) _error(context, _errorText!),
           ],
         ),
@@ -1368,8 +1458,8 @@ class _ConditionDialogState extends State<_ConditionDialog> {
   }
 }
 
-/// Gives a combatant a named effect: bonus or penalty on attack rolls
-/// and/or armor class, with an optional duration.
+/// Gives a combatant a named effect: bonus or penalty on attack rolls,
+/// armor class, damage and/or saving throws, with an optional duration.
 class _BuffDialog extends StatefulWidget {
   const _BuffDialog({required this.encounter, required this.combatant});
 
@@ -1384,7 +1474,12 @@ class _BuffDialogState extends State<_BuffDialog> {
   final _name = TextEditingController();
   final _attack = TextEditingController();
   final _armorClass = TextEditingController();
+  final _damage = TextEditingController();
+  final _savingThrow = TextEditingController();
   final _rounds = TextEditingController();
+
+  /// Damage type of the damage bonus; null for the attack's type.
+  String? _damageType;
   String? _errorText;
 
   @override
@@ -1392,8 +1487,22 @@ class _BuffDialogState extends State<_BuffDialog> {
     _name.dispose();
     _attack.dispose();
     _armorClass.dispose();
+    _damage.dispose();
+    _savingThrow.dispose();
     _rounds.dispose();
     super.dispose();
+  }
+
+  /// The bonus typed into [controller], null if it is empty. If it cannot
+  /// be read, [message] is shown and [_InvalidInput] is thrown.
+  Bonus? _readBonus(TextEditingController controller, String message) {
+    if (controller.text.trim().isEmpty) return null;
+    try {
+      return Bonus.parse(controller.text);
+    } on FormatException {
+      setState(() => _errorText = message);
+      throw const _InvalidInput();
+    }
   }
 
   Future<void> _save() async {
@@ -1401,17 +1510,24 @@ class _BuffDialogState extends State<_BuffDialog> {
       setState(() => _errorText = 'Der Effekt braucht einen Namen.');
       return;
     }
-    Bonus? attackBonus;
-    if (_attack.text.trim().isNotEmpty) {
-      try {
-        attackBonus = Bonus.parse(_attack.text);
-      } on FormatException {
-        setState(
-          () => _errorText =
-              'Bonus auf den Angriffswurf bitte wie 1d4, -1d4 oder 2 angeben.',
-        );
-        return;
-      }
+    final Bonus? attackBonus;
+    final Bonus? damageBonus;
+    final Bonus? saveBonus;
+    try {
+      attackBonus = _readBonus(
+        _attack,
+        'Bonus auf den Angriffswurf bitte wie 1d4, -1d4 oder 2 angeben.',
+      );
+      damageBonus = _readBonus(
+        _damage,
+        'Bonus auf den Schaden bitte wie 1d6, -1d4 oder 2 angeben.',
+      );
+      saveBonus = _readBonus(
+        _savingThrow,
+        'Bonus auf Rettungswürfe bitte wie 1d4, -1d4 oder 2 angeben.',
+      );
+    } on _InvalidInput {
+      return;
     }
     final armorClass = _armorClass.text.trim().isEmpty
         ? 0
@@ -1434,6 +1550,9 @@ class _BuffDialogState extends State<_BuffDialog> {
       name: _name.text,
       attackBonus: attackBonus,
       armorClassBonus: armorClass,
+      damageBonus: damageBonus,
+      damageType: damageBonus == null ? null : _damageType,
+      saveBonus: saveBonus,
       rounds: rounds,
     );
     if (mounted) Navigator.pop(context);
@@ -1464,6 +1583,41 @@ class _BuffDialogState extends State<_BuffDialog> {
               number: true,
             ),
             _field(
+              'buff-damage',
+              'Schaden (optional)',
+              _damage,
+              helper:
+                  'z. B. 1d6 oder 2; bei kritischem Treffer doppelte Würfel',
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: DropdownButtonFormField<String?>(
+                key: const Key('buff-damage-type'),
+                initialValue: _damageType,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Schadensart des Bonus',
+                  isDense: true,
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('wie der Angriff'),
+                  ),
+                  for (final type in damageTypes)
+                    DropdownMenuItem(value: type, child: Text(type)),
+                ],
+                onChanged: (type) => setState(() => _damageType = type),
+              ),
+            ),
+            _field(
+              'buff-saving-throw',
+              'Rettungswürfe (optional)',
+              _savingThrow,
+              helper: 'z. B. 1d4 oder 2',
+            ),
+            _field(
               'buff-rounds',
               'Dauer in Runden (optional)',
               _rounds,
@@ -1488,4 +1642,9 @@ class _BuffDialogState extends State<_BuffDialog> {
       ],
     );
   }
+}
+
+/// Thrown by input helpers after they showed an error message.
+class _InvalidInput implements Exception {
+  const _InvalidInput();
 }

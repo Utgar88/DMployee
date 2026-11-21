@@ -1059,4 +1059,187 @@ void main() {
       );
     });
   });
+
+  group('Kampf-Bildschirm: Effekte auf Schaden und Rettungswürfe', () {
+    Future<Buff> huntersMark(Scene scene) => scene.encounter.addBuff(
+      scene.aria,
+      name: 'Mal des Jägers',
+      damageBonus: Bonus.parse('1d6'),
+    );
+
+    testWidgets('Ein Effekt lässt sich mit Schadensbonus und eigener '
+        'Schadensart aus der Liste vergeben', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Verhexen');
+      await type(tester, 'buff-damage', '1d6');
+      await tapKey(tester, 'buff-damage-type');
+      await tester.tap(find.text('Nekrotisch').last);
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'buff-save');
+
+      final buff = scene.aria.buffs.single;
+      expect('${buff.damageBonus}', '+1d6');
+      expect(buff.damageType, 'Nekrotisch');
+      expect(find.text('Verhexen: Schaden +1d6 Nekrotisch'), findsOneWidget);
+    });
+
+    testWidgets('Ohne gewählte Schadensart hat der Schadensbonus die '
+        'Schadensart des Angriffs', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Mal des Jägers');
+      await type(tester, 'buff-damage', '1d6');
+      await tapKey(tester, 'buff-save');
+
+      expect(scene.aria.buffs.single.damageType, isNull);
+      expect(find.text('Mal des Jägers: Schaden +1d6'), findsOneWidget);
+    });
+
+    testWidgets('Ein Effekt lässt sich mit Bonus auf Rettungswürfe '
+        'vergeben', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Segen');
+      await type(tester, 'buff-attack', '1d4');
+      await type(tester, 'buff-saving-throw', '1d4');
+      await tapKey(tester, 'buff-save');
+
+      expect('${scene.aria.buffs.single.saveBonus}', '+1d4');
+      expect(
+        find.text('Segen: Angriff +1d4, Rettungswurf +1d4'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Ein unlesbarer Schadens- oder Rettungswurfbonus wird mit '
+        'einer Meldung abgelehnt', (tester) async {
+      final scene = Scene([]);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'add-buff-0');
+      await type(tester, 'buff-name', 'Verhexen');
+      await type(tester, 'buff-damage', 'viel');
+      await tapKey(tester, 'buff-save');
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+
+      await type(tester, 'buff-damage', '');
+      await type(tester, 'buff-saving-throw', 'viel');
+      await tapKey(tester, 'buff-save');
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.buffs, isEmpty);
+    });
+
+    testWidgets('Ein Angriff rechnet den Schadensbonus des Angreifers von '
+        'selbst ein', (tester) async {
+      // d20 10 hits; d8 4 + 3, bonus d6 5 = 12.
+      final scene = Scene([10, 4, 5]);
+      await huntersMark(scene);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.damage, 12);
+    });
+
+    testWidgets('Im Angriffsfenster lässt sich der Bonuswürfel für den '
+        'Schaden von Hand eintragen', (tester) async {
+      final scene = Scene([]);
+      await huntersMark(scene);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      await type(tester, 'manual-attack', '15');
+      await type(tester, 'manual-damage', '4');
+      await type(tester, 'manual-buff-damage-0', '6');
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.damage, 13);
+      expect(
+        attack.damageRoll!.modifiers.last.label,
+        'Mal des Jägers (1d6 von Hand)',
+      );
+    });
+
+    testWidgets('Im Angriffsfenster lässt sich ein Effekt für diesen Angriff '
+        'abwählen; sein Feld für den Würfel verschwindet', (tester) async {
+      final scene = Scene([10, 4]);
+      await huntersMark(scene);
+      await scene.pump(tester);
+
+      await openAttack(tester);
+      expect(find.byKey(const Key('manual-buff-damage-0')), findsOneWidget);
+      await tapKey(tester, 'attack-buff-0');
+      expect(find.byKey(const Key('manual-buff-damage-0')), findsNothing);
+      await tapKey(tester, 'target-1');
+
+      final attack = (await scene.events()).whereType<AttackEvent>().single;
+      expect(attack.damage, 7);
+      expect(scene.aria.buffs, hasLength(1));
+    });
+
+    testWidgets('Ohne Effekte beim Angreifer gibt es nichts abzuwählen', (
+      tester,
+    ) async {
+      await Scene([]).pump(tester);
+
+      await openAttack(tester);
+
+      expect(find.byKey(const Key('attack-buff-0')), findsNothing);
+    });
+
+    testWidgets('Der Todesrettungswurf rechnet den Rettungswurfbonus ein; der '
+        'Bonuswürfel lässt sich von Hand eintragen', (tester) async {
+      final scene = Scene([]);
+      scene.aria
+        ..isPlayer = true
+        ..hp = 0;
+      await scene.encounter.addBuff(
+        scene.aria,
+        name: 'Segen',
+        saveBonus: Bonus.parse('1d4'),
+      );
+      await scene.pump(tester);
+
+      await tapKey(tester, 'death-save-0');
+      await type(tester, 'manual-death-save', '8');
+      await type(tester, 'manual-death-save-buff-0', '2');
+      await tapKey(tester, 'death-save-confirm');
+
+      final save = (await scene.events()).whereType<DeathSaveEvent>().single;
+      expect(save.roll.total, 10);
+      expect(scene.aria.deathSaveSuccesses, 1);
+    });
+
+    testWidgets('Ein unmöglicher Bonuswürfel beim Todesrettungswurf wird mit '
+        'einer Meldung abgelehnt', (tester) async {
+      final scene = Scene([]);
+      scene.aria
+        ..isPlayer = true
+        ..hp = 0;
+      await scene.encounter.addBuff(
+        scene.aria,
+        name: 'Segen',
+        saveBonus: Bonus.parse('1d4'),
+      );
+      await scene.pump(tester);
+
+      await tapKey(tester, 'death-save-0');
+      await type(tester, 'manual-death-save', '8');
+      await type(tester, 'manual-death-save-buff-0', '5');
+      await tapKey(tester, 'death-save-confirm');
+
+      expect(find.byKey(const Key('form-error')), findsOneWidget);
+      expect(scene.aria.deathSaveSuccesses, 0);
+    });
+  });
 }

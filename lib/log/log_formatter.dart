@@ -1,5 +1,6 @@
 import '../combat/buff.dart';
 import '../combat/condition.dart';
+import '../combat/damage.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
 import 'log_event.dart';
@@ -103,6 +104,10 @@ class LogFormatter {
       ]);
     }
 
+    final effects = {
+      ?event.damageEffect?.label,
+      for (final extra in event.extraDamage) ?extra.damageEffect?.label,
+    };
     return LogLine([
       LogSpan('$who für '),
       LogSpan(
@@ -114,12 +119,22 @@ class LogFormatter {
           ...rollDetails(event.damageRoll!),
           if (event.damageEffect case final effect?)
             '${effect.label} gegen ${event.damageType}: '
-                '${event.rolledDamage} → ${event.damage}',
+                '${event.rolledDamage} → '
+                '${adjustDamage(event.rolledDamage, effect)}',
+          for (final extra in event.extraDamage) ...[
+            'Schaden (${extra.damageType}):',
+            for (final modifier in extra.modifiers) '$modifier',
+            'Summe: ${Modifier.sum(extra.modifiers)}',
+            if (extra.damageEffect case final effect?)
+              '${effect.label} gegen ${extra.damageType}: '
+                  '${extra.rolled} → ${extra.damage}',
+          ],
+          if (event.extraDamage.isNotEmpty) 'Gesamtschaden: ${event.damage}',
         ],
       ),
       LogSpan(
         ' Schaden ${event.critical ? 'kritisch ' : ''}getroffen'
-        '${event.damageEffect == null ? '' : ' (${event.damageEffect!.label})'}',
+        '${effects.isEmpty ? '' : ' (${effects.join(', ')})'}',
       ),
     ]);
   }
@@ -186,6 +201,9 @@ class LogFormatter {
       ...describeBuffEffects(
         attackBonus: event.attackBonus,
         armorClassBonus: event.armorClassBonus,
+        damageBonus: event.damageBonus,
+        damageType: event.damageType,
+        saveBonus: event.saveBonus,
       ),
       if (rounds != null) '$rounds ${rounds == 1 ? 'Runde' : 'Runden'}',
     ];

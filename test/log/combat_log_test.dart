@@ -872,4 +872,143 @@ void main() {
       ]);
     });
   });
+
+  group('Log-Zeilen für Bonusschaden aus Effekten', () {
+    AttackEvent hexed({DamageEffect? necroticEffect, int damage = 12}) =>
+        AttackEvent(
+          attackerName: 'Aria',
+          targetName: 'Oger',
+          attackName: 'Langschwert',
+          targetArmorClass: 11,
+          attackRoll: attackRoll([15]),
+          hit: true,
+          critical: false,
+          damageType: 'Hieb',
+          damageRoll: RollRecord(
+            count: 1,
+            sides: 8,
+            rolls: [4],
+            modifiers: [
+              Modifier('Schadensbonus', 3),
+              Modifier('Mal des Jägers (1d6)', 2),
+            ],
+          ),
+          extraDamage: [
+            ExtraDamage(
+              damageType: 'Nekrotisch',
+              modifiers: [Modifier('Verhexen (1d6)', 5)],
+              damageEffect: necroticEffect,
+            ),
+          ],
+          damage: damage,
+        );
+
+    test('Die Zeile nennt den gesamten Schaden', () {
+      expect(
+        formatter.format(hexed(damage: 14)).text,
+        'Aria hat Oger für 14 Schaden getroffen',
+      );
+    });
+
+    test('Die Details zeigen den Bonus gleicher Schadensart beim '
+        'Waffenschaden und den Bonus eigener Schadensart getrennt mit '
+        'Gesamtschaden', () {
+      expect(
+        detailsOf(hexed(damage: 14)),
+        containsAllInOrder([
+          'Schaden (Hieb):',
+          '1d8: 4',
+          '+3 Schadensbonus',
+          '+2 Mal des Jägers (1d6)',
+          'Summe: 9',
+          'Schaden (Nekrotisch):',
+          '+5 Verhexen (1d6)',
+          'Summe: 5',
+          'Gesamtschaden: 14',
+        ]),
+      );
+    });
+
+    test('Eine Resistenz gegen den Bonusschaden steht in Zeile und '
+        'Details', () {
+      final event = hexed(necroticEffect: DamageEffect.resistance, damage: 11);
+
+      expect(
+        formatter.format(event).text,
+        'Aria hat Oger für 11 Schaden getroffen (Resistenz)',
+      );
+      expect(
+        detailsOf(event),
+        containsAllInOrder([
+          'Resistenz gegen Nekrotisch: 5 → 2',
+          'Gesamtschaden: 11',
+        ]),
+      );
+    });
+
+    test('Ohne Bonusschaden eigener Art fehlt die Zeile Gesamtschaden', () {
+      expect(
+        detailsOf(hitEvent()).where((l) => l.startsWith('Gesamtschaden')),
+        isEmpty,
+      );
+    });
+
+    test('Der Bonusschaden bleibt beim Speichern und Laden (JSON) '
+        'erhalten', () {
+      final event = hexed(necroticEffect: DamageEffect.resistance);
+      final restored =
+          LogEvent.fromJson(event.type, event.toJson()) as AttackEvent;
+
+      final extra = restored.extraDamage.single;
+      expect(extra.damageType, 'Nekrotisch');
+      expect(extra.modifiers, [Modifier('Verhexen (1d6)', 5)]);
+      expect(extra.damageEffect, DamageEffect.resistance);
+      expect(extra.damage, 2);
+    });
+
+    test('Effekte mit Schadens- und Rettungswurfbonus stehen mit ihrer '
+        'Wirkung im Log', () {
+      const hex = BuffEvent(
+        name: 'Aria',
+        buff: 'Verhexen',
+        change: EffectChange.added,
+        damageBonus: '+1d6',
+        damageType: 'Nekrotisch',
+      );
+      const bless = BuffEvent(
+        name: 'Aria',
+        buff: 'Segen',
+        change: EffectChange.added,
+        attackBonus: '+1d4',
+        saveBonus: '+1d4',
+      );
+
+      expect(
+        formatter.format(hex).text,
+        'Aria erhält Verhexen (Schaden +1d6 Nekrotisch)',
+      );
+      expect(
+        formatter.format(bless).text,
+        'Aria erhält Segen (Angriff +1d4, Rettungswurf +1d4)',
+      );
+    });
+
+    test('Schadens- und Rettungswurfbonus eines Effekts bleiben beim '
+        'Speichern und Laden (JSON) erhalten', () {
+      const original = BuffEvent(
+        name: 'Aria',
+        buff: 'Verhexen',
+        change: EffectChange.added,
+        damageBonus: '+1d6',
+        damageType: 'Nekrotisch',
+        saveBonus: '+1',
+      );
+      final restored =
+          LogEvent.fromJson(original.type, original.toJson()) as BuffEvent;
+
+      expect(restored.damageBonus, '+1d6');
+      expect(restored.damageType, 'Nekrotisch');
+      expect(restored.saveBonus, '+1');
+    });
+  });
 }

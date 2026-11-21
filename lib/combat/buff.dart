@@ -63,22 +63,34 @@ class Bonus {
   String toString() => '${negative ? '-' : '+'}${isDice ? dice : flat}';
 }
 
-/// A named effect on a combatant, e.g. Segen (`+1d4` on attack rolls) or
-/// Schild des Glaubens (+2 armor class). Penalties are effects too.
+/// A named effect on a combatant, e.g. Segen (`+1d4` on attack rolls and
+/// saving throws), Verhexen (`+1d6` necrotic damage) or Schild des Glaubens
+/// (+2 armor class). Penalties are effects too.
 class Buff {
   Buff({
     required this.name,
     this.attackBonus,
     this.armorClassBonus = 0,
+    this.damageBonus,
+    this.damageType,
+    this.saveBonus,
     this.roundsLeft,
   });
 
   factory Buff.fromJson(Map<String, Object?> json) {
-    final attackBonus = json['attackBonus'] as String?;
+    Bonus? bonus(String key) {
+      final text = json[key] as String?;
+      return text == null ? null : Bonus.parse(text);
+    }
+
     return Buff(
       name: json['name']! as String,
-      attackBonus: attackBonus == null ? null : Bonus.parse(attackBonus),
+      attackBonus: bonus('attackBonus'),
       armorClassBonus: json['armorClassBonus'] as int? ?? 0,
+      // Missing in states saved before damage and saving throw bonuses.
+      damageBonus: bonus('damageBonus'),
+      damageType: json['damageType'] as String?,
+      saveBonus: bonus('saveBonus'),
       roundsLeft: json['roundsLeft'] as int?,
     );
   }
@@ -91,6 +103,17 @@ class Buff {
   /// Added to the combatant's armor class; negative for a penalty.
   final int armorClassBonus;
 
+  /// Added to the damage of every hit of the combatant. Bonus dice are
+  /// doubled on a critical hit, a fixed value is not.
+  final Bonus? damageBonus;
+
+  /// Damage type of [damageBonus], e.g. `Nekrotisch`; null if it has the
+  /// type of the attack.
+  final String? damageType;
+
+  /// Added to every saving throw of the combatant.
+  final Bonus? saveBonus;
+
   /// Turns of the combatant until the effect ends; null if it lasts until
   /// it is removed.
   int? roundsLeft;
@@ -99,6 +122,9 @@ class Buff {
   List<String> get effects => describeBuffEffects(
     attackBonus: attackBonus?.toString(),
     armorClassBonus: armorClassBonus,
+    damageBonus: damageBonus?.toString(),
+    damageType: damageType,
+    saveBonus: saveBonus?.toString(),
   );
 
   /// Short form for the combat screen: `Segen: Angriff +1d4 (10)`.
@@ -112,16 +138,26 @@ class Buff {
     'name': name,
     'attackBonus': attackBonus?.toString(),
     'armorClassBonus': armorClassBonus,
+    'damageBonus': ?damageBonus?.toString(),
+    'damageType': ?damageType,
+    'saveBonus': ?saveBonus?.toString(),
     'roundsLeft': roundsLeft,
   };
 }
 
-/// `[Angriff +1d4, RK +2]` for the given values; empty without any.
+/// `[Angriff +1d4, RK +2, Schaden +1d6 Nekrotisch, Rettungswurf +1d4]` for
+/// the given values; empty without any.
 List<String> describeBuffEffects({
   String? attackBonus,
   int armorClassBonus = 0,
+  String? damageBonus,
+  String? damageType,
+  String? saveBonus,
 }) => [
   if (attackBonus != null) 'Angriff $attackBonus',
   if (armorClassBonus != 0)
     'RK ${armorClassBonus > 0 ? '+' : ''}$armorClassBonus',
+  if (damageBonus != null)
+    'Schaden $damageBonus${damageType == null ? '' : ' $damageType'}',
+  if (saveBonus != null) 'Rettungswurf $saveBonus',
 ];
