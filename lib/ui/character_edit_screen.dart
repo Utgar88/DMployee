@@ -46,6 +46,7 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
   late final _armorClass = TextEditingController(
     text: _original?.armorClass.toString(),
   );
+  late int _hitDie = _original?.hitDie ?? 8;
   late final _saves = {...?_original?.saveProficiencies};
   late final _attacks = [...?_original?.attacks];
   String? _errorText;
@@ -124,6 +125,7 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
             armorClass: armorClass,
             saveProficiencies: _saves,
             attacks: _attacks,
+            hitDie: _hitDie,
           )
         : original.withValues(
             name: _name.text,
@@ -135,6 +137,7 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
             armorClass: armorClass,
             saveProficiencies: _saves,
             attacks: _attacks,
+            hitDie: _hitDie,
           );
     await widget.characters.save(character);
     widget.encounter.applyCharacter(character);
@@ -268,6 +271,8 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
                         ),
                       ],
                     ),
+                    _hitDiceRow(context),
+                    const SizedBox(height: 8),
                     Text(
                       'Übungsbonus ${formatModifier(proficiency)} · '
                       'Initiative ${formatModifier(_modifier(Ability.dexterity))}',
@@ -315,6 +320,37 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
 
   /// Score field, modifier, saving throw proficiency and saving throw bonus
   /// of one ability.
+  Widget _hitDiceRow(BuildContext context) {
+    final original = _original;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Trefferwürfel', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 4),
+        SegmentedButton<int>(
+          key: const Key('character-hit-die'),
+          showSelectedIcon: false,
+          segments: [
+            for (final sides in Character.hitDieSizes)
+              ButtonSegment(value: sides, label: Text('W$sides')),
+          ],
+          selected: {_hitDie},
+          onSelectionChanged: (selection) =>
+              setState(() => _hitDie = selection.single),
+        ),
+        if (original != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Trefferwürfel übrig: ${original.hitDiceRemaining} von '
+              '${original.hitDiceTotal}',
+              key: const Key('hit-dice-left'),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _abilityRow(BuildContext context, Ability ability) {
     final theme = Theme.of(context);
     return Padding(

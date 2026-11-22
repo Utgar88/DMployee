@@ -9,8 +9,8 @@ import 'ability.dart';
 /// are calculated, never stored.
 class Character {
   /// Throws an [ArgumentError] for an empty [name], a [level] outside 1 to
-  /// 20, ability scores outside 1 to 30, [maxHp] below 1 or [armorClass]
-  /// below 0.
+  /// 20, ability scores outside 1 to 30, [maxHp] below 1, [armorClass]
+  /// below 0 or a [hitDie] not in [hitDieSizes].
   Character({
     this.id,
     required String name,
@@ -22,6 +22,7 @@ class Character {
     required this.armorClass,
     Set<Ability> saveProficiencies = const {},
     List<Attack> attacks = const [],
+    this.hitDie = 8,
     int? hp,
   }) : name = name.trim(),
        player = player.trim(),
@@ -50,6 +51,13 @@ class Character {
     if (armorClass < 0) {
       throw ArgumentError.value(armorClass, 'armorClass', 'must not be < 0');
     }
+    if (!hitDieSizes.contains(hitDie)) {
+      throw ArgumentError.value(
+        hitDie,
+        'hitDie',
+        'must be one of $hitDieSizes',
+      );
+    }
   }
 
   factory Character.fromJson(Map<String, Object?> json) {
@@ -74,8 +82,10 @@ class Character {
           for (final attack in json['attacks'] as List? ?? const [])
             Attack.fromJson((attack as Map).cast<String, Object?>()),
         ],
+        hitDie: json['hitDie'] as int? ?? 8,
         hp: json['hp']! as int,
       )
+      ..hitDiceSpent = json['hitDiceSpent'] as int? ?? 0
       ..tempHp = json['tempHp'] as int? ?? 0
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
@@ -103,6 +113,21 @@ class Character {
   /// Abilities whose saving throws add the proficiency bonus.
   final Set<Ability> saveProficiencies;
   final List<Attack> attacks;
+
+  /// The possible hit dice: d6, d8, d10 and d12.
+  static const hitDieSizes = [6, 8, 10, 12];
+
+  /// Sides of the hit die, e.g. 10 for a d10. Free choice until classes
+  /// come from the compendium.
+  final int hitDie;
+
+  /// One hit die per level.
+  int get hitDiceTotal => level;
+
+  /// Hit dice spent on short rests and not yet regained, 0 to [level].
+  int hitDiceSpent = 0;
+
+  int get hitDiceRemaining => hitDiceTotal - hitDiceSpent;
 
   /// Current state, changed by combat.
   int hp;
@@ -134,6 +159,7 @@ class Character {
   /// A copy with other sheet values; values left out stay. Id and current
   /// state are kept. An unhurt character has full hit points with a new
   /// [maxHp]; otherwise hit points stay but never exceed the new maximum.
+  /// Spent hit dice never exceed a lower [level].
   ///
   /// Invalid values throw an [ArgumentError] like the constructor.
   Character withValues({
@@ -146,7 +172,9 @@ class Character {
     int? armorClass,
     Set<Ability>? saveProficiencies,
     List<Attack>? attacks,
+    int? hitDie,
   }) {
+    final newLevel = level ?? this.level;
     final newMaxHp = maxHp ?? this.maxHp;
     final unhurt = hp == this.maxHp;
     return Character(
@@ -154,14 +182,16 @@ class Character {
         name: name ?? this.name,
         player: player ?? this.player,
         characterClass: characterClass ?? this.characterClass,
-        level: level ?? this.level,
+        level: newLevel,
         abilityScores: abilityScores ?? this.abilityScores,
         maxHp: newMaxHp,
         armorClass: armorClass ?? this.armorClass,
         saveProficiencies: saveProficiencies ?? this.saveProficiencies,
         attacks: attacks ?? this.attacks,
+        hitDie: hitDie ?? this.hitDie,
         hp: unhurt || hp > newMaxHp ? newMaxHp : hp,
       )
+      ..hitDiceSpent = hitDiceSpent > newLevel ? newLevel : hitDiceSpent
       ..tempHp = tempHp
       ..deathSaveSuccesses = deathSaveSuccesses
       ..deathSaveFailures = deathSaveFailures
@@ -185,7 +215,9 @@ class Character {
       for (final ability in saveProficiencies) ability.name,
     ],
     'attacks': [for (final attack in attacks) attack.toJson()],
+    'hitDie': hitDie,
     'hp': hp,
+    'hitDiceSpent': hitDiceSpent,
     'tempHp': tempHp,
     'deathSaveSuccesses': deathSaveSuccesses,
     'deathSaveFailures': deathSaveFailures,

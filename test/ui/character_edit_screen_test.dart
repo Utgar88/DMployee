@@ -295,4 +295,75 @@ void main() {
       expect(scene.closed, isFalse);
     });
   });
+
+  group('Charakterbogen: Trefferwürfel', () {
+    testWidgets('Ein neuer Charakter hat W8 als Trefferwürfel; die Auswahl '
+        'bietet W6 bis W12', (tester) async {
+      await Scene().open(tester);
+
+      final picker = find.byKey(const Key('character-hit-die'));
+      await tester.ensureVisible(picker);
+      expect(tester.widget<SegmentedButton<int>>(picker).selected, {8});
+      for (final label in ['W6', 'W8', 'W10', 'W12']) {
+        expect(
+          find.descendant(of: picker, matching: find.text(label)),
+          findsOneWidget,
+        );
+      }
+    });
+
+    testWidgets('Der gewählte Trefferwürfel wird gespeichert', (tester) async {
+      final scene = Scene();
+      await scene.open(tester);
+
+      await fillBorin(tester);
+      await tester.ensureVisible(find.text('W10'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('W10'));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'character-save');
+
+      expect((await scene.characters.all()).single.hitDie, 10);
+    });
+
+    testWidgets('Ein vorhandener Charakter zeigt seinen Trefferwürfel und '
+        'wie viele Trefferwürfel übrig sind; Ändern behält die ausgegebenen', (
+      tester,
+    ) async {
+      final scene = Scene();
+      final aria = await scene.characters.save(
+        (await scene.saveAria()).withValues(hitDie: 10)..hitDiceSpent = 2,
+      );
+      await scene.open(tester, aria);
+
+      await tester.ensureVisible(find.byKey(const Key('hit-dice-left')));
+      expect(
+        tester
+            .widget<SegmentedButton<int>>(
+              find.byKey(const Key('character-hit-die')),
+            )
+            .selected,
+        {10},
+      );
+      expect(textOf(tester, 'hit-dice-left'), 'Trefferwürfel übrig: 3 von 5');
+
+      await tester.ensureVisible(find.text('W12'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('W12'));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'character-save');
+
+      final saved = (await scene.characters.byId(aria.id!))!;
+      expect(saved.hitDie, 12);
+      expect(saved.hitDiceSpent, 2);
+    });
+
+    testWidgets('Ein neuer Charakter zeigt keine übrigen Trefferwürfel', (
+      tester,
+    ) async {
+      await Scene().open(tester);
+
+      expect(find.byKey(const Key('hit-dice-left')), findsNothing);
+    });
+  });
 }

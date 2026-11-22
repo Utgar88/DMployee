@@ -236,4 +236,95 @@ void main() {
       expect(restored.isDead, isFalse);
     });
   });
+
+  group('Charakter: Trefferwürfel', () {
+    test('Ein neuer Charakter hat W8 als Trefferwürfel und so viele '
+        'Trefferwürfel wie Stufen, alle übrig', () {
+      final aria = Character(name: 'Aria', level: 5, maxHp: 30, armorClass: 15);
+
+      expect(aria.hitDie, 8);
+      expect(aria.hitDiceTotal, 5);
+      expect(aria.hitDiceSpent, 0);
+      expect(aria.hitDiceRemaining, 5);
+    });
+
+    test('Als Trefferwürfel sind W6, W8, W10 und W12 möglich', () {
+      expect(Character.hitDieSizes, [6, 8, 10, 12]);
+      for (final size in Character.hitDieSizes) {
+        expect(
+          Character(name: 'A', maxHp: 10, armorClass: 10, hitDie: size).hitDie,
+          size,
+        );
+      }
+    });
+
+    test('Ein anderer Trefferwürfel als W6, W8, W10 oder W12 wird '
+        'abgelehnt', () {
+      expect(
+        () => Character(name: 'A', maxHp: 10, armorClass: 10, hitDie: 4),
+        throwsArgumentError,
+      );
+      expect(
+        () => Character(name: 'A', maxHp: 10, armorClass: 10, hitDie: 20),
+        throwsArgumentError,
+      );
+    });
+
+    test('Ausgegebene Trefferwürfel verringern die übrigen', () {
+      final aria = Character(name: 'Aria', level: 5, maxHp: 30, armorClass: 15)
+        ..hitDiceSpent = 2;
+
+      expect(aria.hitDiceRemaining, 3);
+    });
+
+    test('Der Trefferwürfel lässt sich über den Bogen ändern; ausgegebene '
+        'Trefferwürfel bleiben', () {
+      final aria = Character(name: 'Aria', level: 5, maxHp: 30, armorClass: 15)
+        ..hitDiceSpent = 2;
+
+      final changed = aria.withValues(hitDie: 10);
+
+      expect(changed.hitDie, 10);
+      expect(changed.hitDiceSpent, 2);
+    });
+
+    test('Sinkt die Stufe, sind höchstens so viele Trefferwürfel ausgegeben, '
+        'wie der Charakter noch hat', () {
+      final aria = Character(name: 'Aria', level: 5, maxHp: 30, armorClass: 15)
+        ..hitDiceSpent = 4;
+
+      final lower = aria.withValues(level: 3);
+
+      expect(lower.hitDiceSpent, 3);
+      expect(lower.hitDiceRemaining, 0);
+    });
+
+    test('Trefferwürfel und ausgegebene Trefferwürfel werden gespeichert', () {
+      final aria = Character(
+        name: 'Aria',
+        level: 5,
+        maxHp: 30,
+        armorClass: 15,
+        hitDie: 10,
+      )..hitDiceSpent = 2;
+
+      final restored = Character.fromJson(aria.toJson());
+
+      expect(restored.hitDie, 10);
+      expect(restored.hitDiceSpent, 2);
+    });
+
+    test('Ein früher gespeicherter Charakter ohne Trefferwürfel bekommt W8, '
+        'alle Trefferwürfel übrig', () {
+      final json =
+          Character(name: 'Aria', level: 4, maxHp: 30, armorClass: 15).toJson()
+            ..remove('hitDie')
+            ..remove('hitDiceSpent');
+
+      final restored = Character.fromJson(json);
+
+      expect(restored.hitDie, 8);
+      expect(restored.hitDiceRemaining, 4);
+    });
+  });
 }
