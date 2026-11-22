@@ -12,8 +12,10 @@ import '../log/log_formatter.dart';
 import 'form_widgets.dart';
 import '../characters/character.dart';
 import '../characters/character_repository.dart';
+import '../characters/spell_slots.dart';
 import 'character_edit_screen.dart';
 import 'menu_button.dart';
+import 'spell_slots_dialog.dart';
 
 /// Combat screen: set up combatants, roll initiative, step through turns and
 /// resolve attacks. All rules live in [Encounter]; this is only the surface.
@@ -22,6 +24,7 @@ class CombatScreen extends StatefulWidget {
     super.key,
     required this.encounter,
     this.characters,
+    this.spellSlots,
     this.formatter = const LogFormatter(),
     this.onOpenMenu,
   });
@@ -31,6 +34,9 @@ class CombatScreen extends StatefulWidget {
   /// Stored player characters that can join the combat; without them the
   /// screen offers no characters.
   final CharacterRepository? characters;
+
+  /// Using spell slots of characters; without it there is no button.
+  final SpellSlotService? spellSlots;
   final LogFormatter formatter;
 
   /// Opens the app menu; without it the app bar has no menu button.
@@ -100,6 +106,13 @@ class _CombatScreenState extends State<CombatScreen> {
       ),
     );
     if (picked != null) setState(() => _encounter.addCharacter(picked));
+  }
+
+  Future<void> _openSpellSlots(SpellSlotService service, int id) async {
+    await _encounter.flush();
+    final character = await widget.characters?.byId(id);
+    if (character == null || !mounted) return;
+    await showSpellSlots(context, service, character);
   }
 
   Future<void> _editCombatant(Combatant combatant) async {
@@ -541,6 +554,16 @@ class _CombatScreenState extends State<CombatScreen> {
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Effekt'),
                 ),
+                if ((widget.spellSlots, combatant.characterId) case (
+                  final service?,
+                  final id?,
+                ))
+                  TextButton.icon(
+                    key: Key('slots-$index'),
+                    onPressed: () => _openSpellSlots(service, id),
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                    label: const Text('Zauberplätze'),
+                  ),
                 TextButton.icon(
                   key: Key('traits-$index'),
                   onPressed: () => _editTraits(combatant),

@@ -3,10 +3,12 @@ import 'package:material_ui/material_ui.dart';
 import '../characters/character.dart';
 import '../characters/character_repository.dart';
 import '../characters/rest.dart';
+import '../characters/spell_slots.dart';
 import '../combat/encounter.dart';
 import '../log/log_event.dart';
 import 'character_edit_screen.dart';
 import 'rest_screens.dart';
+import 'spell_slots_dialog.dart';
 
 /// All stored player characters: open their sheet, create new ones and send
 /// them into the combat.
@@ -16,6 +18,7 @@ class CharactersScreen extends StatefulWidget {
     required this.characters,
     required this.encounter,
     this.rests,
+    this.spellSlots,
   });
 
   final CharacterRepository characters;
@@ -23,6 +26,9 @@ class CharactersScreen extends StatefulWidget {
 
   /// Short and long rests; without it there is no button for resting.
   final RestService? rests;
+
+  /// Using spell slots; without it the list offers no button for them.
+  final SpellSlotService? spellSlots;
 
   @override
   State<CharactersScreen> createState() => _CharactersScreenState();
@@ -191,6 +197,33 @@ class _CharactersScreenState extends State<CharactersScreen> {
                       key: Key('character-hit-dice-$index'),
                       style: theme.textTheme.bodySmall,
                     ),
+                    if (spellSlotSummary(character) case final summary?)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              summary,
+                              key: Key('character-slots-$index'),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                          if (widget.spellSlots case final service?)
+                            IconButton(
+                              key: Key('slots-$index'),
+                              tooltip: 'Zauberplätze',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () async {
+                                await showSpellSlots(
+                                  context,
+                                  service,
+                                  character,
+                                );
+                                await _load();
+                              },
+                              icon: const Icon(Icons.auto_awesome_outlined),
+                            ),
+                        ],
+                      ),
                   ],
                 ),
               ),

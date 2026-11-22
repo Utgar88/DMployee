@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../characters/character_repository.dart';
 import '../characters/rest.dart';
+import '../characters/spell_slots.dart';
 import '../combat/encounter.dart';
 import '../log/log_repository.dart';
 import '../settings/app_settings.dart';
@@ -59,6 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
     encounter: _encounter,
   );
 
+  late final _spellSlots = SpellSlotService(
+    characters: _characters,
+    log: widget.log,
+    encounter: _encounter,
+  );
+
   int _index = 0;
 
   /// Counts openings of the log tab so it reloads its entries each time.
@@ -75,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
           characters: _characters,
           encounter: _encounter,
           rests: _rests,
+          spellSlots: _spellSlots,
         ),
       ),
     );
@@ -134,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
           CombatScreen(
             encounter: _encounter,
             characters: _characters,
+            spellSlots: _spellSlots,
             onOpenMenu: _openMenu,
           ),
           LogScreen(
