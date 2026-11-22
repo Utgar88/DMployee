@@ -3,11 +3,18 @@ import 'package:material_ui/material_ui.dart';
 import '../characters/character.dart';
 import '../characters/spell_slots.dart';
 
-/// `Zauberplätze: 1. Grad 3/4 · 3. Grad 2/2 · Pakt 1/2`; null without slots.
+/// `Zauberplätze: 1. Grad 3/4 · Pakt 1/2 (3. Grad)`; null without slots.
 String? spellSlotSummary(Character character) {
   if (!character.hasSpellSlots) return null;
-  return 'Zauberplätze: ${[for (final level in character.slotLevels) '$level. Grad ${character.slotsRemaining(level)}/'
-        '${character.slotsTotal(level)}', if (character.pactSlots > 0) 'Pakt ${character.pactSlotsRemaining}/${character.pactSlots}'].join(' · ')}';
+  final parts = [
+    for (final level in character.slotLevels)
+      '$level. Grad ${character.slotsRemaining(level)}/'
+          '${character.slotsTotal(level)}',
+    if (character.pactSlots > 0)
+      'Pakt ${character.pactSlotsRemaining}/${character.pactSlots} '
+          '(${character.pactSlotLevel}. Grad)',
+  ];
+  return 'Zauberplätze: ${parts.join(' · ')}';
 }
 
 /// Shows the spell slots of [character]; each level and the pact magic can

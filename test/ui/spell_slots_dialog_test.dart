@@ -106,7 +106,7 @@ void main() {
       expect(find.byKey(const Key('slots-0')), findsNothing);
       expect(
         textOf(tester, 'character-slots-1'),
-        'Zauberplätze: 1. Grad 4/4 · 3. Grad 2/2 · Pakt 2/2',
+        'Zauberplätze: 1. Grad 4/4 · 3. Grad 2/2 · Pakt 2/2 (3. Grad)',
       );
       expect(find.byKey(const Key('slots-1')), findsOneWidget);
     });
@@ -180,7 +180,7 @@ void main() {
 
       expect(
         textOf(tester, 'character-slots-0'),
-        'Zauberplätze: 1. Grad 4/4 · 3. Grad 1/2 · Pakt 2/2',
+        'Zauberplätze: 1. Grad 4/4 · 3. Grad 1/2 · Pakt 2/2 (3. Grad)',
       );
     });
   });

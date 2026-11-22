@@ -163,82 +163,85 @@ class _CharactersScreenState extends State<CharactersScreen> {
         onTap: () => _open(character),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      character.name,
-                      key: Key('character-name-$index'),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    Text(details, key: Key('character-details-$index')),
-                    Row(
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'TP ${character.hp}/${character.maxHp}$temp · '
-                          'RK ${character.armorClass}',
-                          key: Key('character-stats-$index'),
+                          character.name,
+                          key: Key('character-name-$index'),
+                          style: theme.textTheme.titleMedium,
                         ),
-                        if (character.isDead) ...[
-                          const SizedBox(width: 8),
-                          Text(
-                            'tot',
-                            style: TextStyle(color: theme.colorScheme.error),
-                          ),
-                        ],
+                        Text(details, key: Key('character-details-$index')),
+                        Row(
+                          children: [
+                            Text(
+                              'TP ${character.hp}/${character.maxHp}$temp · '
+                              'RK ${character.armorClass}',
+                              key: Key('character-stats-$index'),
+                            ),
+                            if (character.isDead) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                'tot',
+                                style: TextStyle(
+                                  color: theme.colorScheme.error,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          'Trefferwürfel ${character.hitDiceRemaining}/'
+                          '${character.hitDiceTotal} (W${character.hitDie})',
+                          key: Key('character-hit-dice-$index'),
+                          style: theme.textTheme.bodySmall,
+                        ),
                       ],
                     ),
-                    Text(
-                      'Trefferwürfel ${character.hitDiceRemaining}/'
-                      '${character.hitDiceTotal} (W${character.hitDie})',
-                      key: Key('character-hit-dice-$index'),
-                      style: theme.textTheme.bodySmall,
+                  ),
+                  if (inCombat)
+                    Chip(
+                      key: Key('in-combat-$index'),
+                      avatar: const Icon(Icons.shield_outlined, size: 16),
+                      label: const Text('im Kampf'),
+                      visualDensity: VisualDensity.compact,
+                    )
+                  else
+                    TextButton(
+                      key: Key('to-combat-$index'),
+                      onPressed: () => _toCombat(character),
+                      child: const Text('In den Kampf'),
                     ),
-                    if (spellSlotSummary(character) case final summary?)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              summary,
-                              key: Key('character-slots-$index'),
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                          if (widget.spellSlots case final service?)
-                            IconButton(
-                              key: Key('slots-$index'),
-                              tooltip: 'Zauberplätze',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () async {
-                                await showSpellSlots(
-                                  context,
-                                  service,
-                                  character,
-                                );
-                                await _load();
-                              },
-                              icon: const Icon(Icons.auto_awesome_outlined),
-                            ),
-                        ],
+                ],
+              ),
+              if (spellSlotSummary(character) case final summary?)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        summary,
+                        key: Key('character-slots-$index'),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    if (widget.spellSlots case final service?)
+                      IconButton(
+                        key: Key('slots-$index'),
+                        tooltip: 'Zauberplätze',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () async {
+                          await showSpellSlots(context, service, character);
+                          await _load();
+                        },
+                        icon: const Icon(Icons.auto_awesome_outlined),
                       ),
                   ],
-                ),
-              ),
-              if (inCombat)
-                Chip(
-                  key: Key('in-combat-$index'),
-                  avatar: const Icon(Icons.shield_outlined, size: 16),
-                  label: const Text('im Kampf'),
-                  visualDensity: VisualDensity.compact,
-                )
-              else
-                TextButton(
-                  key: Key('to-combat-$index'),
-                  onPressed: () => _toCombat(character),
-                  child: const Text('In den Kampf'),
                 ),
             ],
           ),
