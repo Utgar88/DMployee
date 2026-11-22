@@ -280,6 +280,9 @@ class LogFormatter {
           if (ruleset != null)
             'Zurück nach der langen Rast: ${ruleset.longRestHitDiceRule}',
           ...slotLines,
+          if (event.exhaustionBefore != event.exhaustionAfter)
+            'Erschöpfung: Stufe ${event.exhaustionBefore} → '
+                '${event.exhaustionAfter}',
         ],
       ),
     ]);

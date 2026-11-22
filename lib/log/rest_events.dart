@@ -30,6 +30,8 @@ class RestEvent extends LogEvent {
     this.blocker,
     this.slotsRegained = 0,
     this.pactSlotsRegained = 0,
+    this.exhaustionBefore = 0,
+    this.exhaustionAfter = 0,
   });
 
   factory RestEvent.fromJson(Map<String, Object?> json) {
@@ -50,6 +52,8 @@ class RestEvent extends LogEvent {
       },
       slotsRegained: json['slotsRegained'] as int? ?? 0,
       pactSlotsRegained: json['pactSlotsRegained'] as int? ?? 0,
+      exhaustionBefore: json['exhaustionBefore'] as int? ?? 0,
+      exhaustionAfter: json['exhaustionAfter'] as int? ?? 0,
     );
   }
 
@@ -79,6 +83,10 @@ class RestEvent extends LogEvent {
   final int slotsRegained;
   final int pactSlotsRegained;
 
+  /// Exhaustion level before and after the rest; a long rest lowers it.
+  final int exhaustionBefore;
+  final int exhaustionAfter;
+
   @override
   String get type => typeName;
 
@@ -97,6 +105,10 @@ class RestEvent extends LogEvent {
     'blocker': ?blocker?.name,
     if (slotsRegained > 0) 'slotsRegained': slotsRegained,
     if (pactSlotsRegained > 0) 'pactSlotsRegained': pactSlotsRegained,
+    if (exhaustionBefore != exhaustionAfter) ...{
+      'exhaustionBefore': exhaustionBefore,
+      'exhaustionAfter': exhaustionAfter,
+    },
   };
 }
 

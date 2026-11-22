@@ -58,7 +58,7 @@ class RestService {
   bool canSpendHitDie(Character character) =>
       blockerFor(character, RestKind.short) == null &&
       character.hitDiceRemaining > 0 &&
-      character.hp < character.maxHp;
+      character.hp < character.maxHpUnder(_rules);
 
   /// Each of [characters] takes a short rest; logged per character. Pact
   /// magic slots come back; hit dice are spent afterwards with
@@ -86,10 +86,11 @@ class RestService {
     }
   }
 
-  /// Each of [characters] takes a long rest: full hit points, temporary hit
-  /// points end, spent hit dice come back by the rules, all spell slots and
-  /// pact magic slots come back. Characters the rest
-  /// does not help keep their state; the log says why.
+  /// Each of [characters] takes a long rest: exhaustion drops by 1 first,
+  /// then full hit points (of the maximum after that), temporary hit points
+  /// end, spent hit dice come back by the rules, all spell slots and pact
+  /// magic slots come back. Characters the rest does not help keep their
+  /// state; the log says why.
   ///
   /// Throws a [StateError] while a combat runs.
   Future<void> longRest(List<Character> characters) async {
@@ -103,15 +104,17 @@ class RestService {
         hitDice: character.hitDiceRemaining,
         slotsUsed: character.slotsUsed.values.fold(0, (a, b) => a + b),
         pactSlotsUsed: character.pactSlotsUsed,
+        exhaustion: character.exhaustion,
       );
       if (blocker == null) {
+        character.exhaustion = max(0, character.exhaustion - 1);
         character.slotsUsed.clear();
         character.pactSlotsUsed = 0;
         final regained = _rules.hitDiceRegainedOnLongRest(
           character.hitDiceTotal,
         );
         character
-          ..hp = character.maxHp
+          ..hp = character.maxHpUnder(_rules)
           ..tempHp = 0
           ..deathSaveSuccesses = 0
           ..deathSaveFailures = 0
@@ -129,6 +132,7 @@ class RestService {
           hitDiceBefore: before.hitDice,
           slotsRegained: blocker == null ? before.slotsUsed : 0,
           pactSlotsRegained: blocker == null ? before.pactSlotsUsed : 0,
+          exhaustionBefore: before.exhaustion,
         ),
       );
     }
@@ -167,7 +171,7 @@ class RestService {
     final healing = _rules.hitDieHealing(roll.total);
     final hpBefore = character.hp;
     character
-      ..hp = min(character.maxHp, character.hp + healing)
+      ..hp = min(character.maxHpUnder(_rules), character.hp + healing)
       ..hitDiceSpent = character.hitDiceSpent + 1;
     if (character.hp > 0) {
       character
@@ -184,7 +188,7 @@ class RestService {
         healing: healing,
         hpBefore: hpBefore,
         hpAfter: character.hp,
-        maxHp: character.maxHp,
+        maxHp: character.maxHpUnder(_rules),
         hitDiceLeft: character.hitDiceRemaining,
         hitDiceTotal: character.hitDiceTotal,
       ),
@@ -222,6 +226,7 @@ class RestService {
     int? hitDiceBefore,
     int slotsRegained = 0,
     int pactSlotsRegained = 0,
+    int? exhaustionBefore,
   }) => RestEvent(
     name: character.name,
     kind: kind,
@@ -229,12 +234,14 @@ class RestService {
     blocker: blocker,
     hpBefore: hpBefore ?? character.hp,
     hpAfter: character.hp,
-    maxHp: character.maxHp,
+    maxHp: character.maxHpUnder(_rules),
     tempHpBefore: tempHpBefore,
     hitDiceBefore: hitDiceBefore ?? character.hitDiceRemaining,
     hitDiceAfter: character.hitDiceRemaining,
     hitDiceTotal: character.hitDiceTotal,
     slotsRegained: slotsRegained,
     pactSlotsRegained: pactSlotsRegained,
+    exhaustionBefore: exhaustionBefore ?? character.exhaustion,
+    exhaustionAfter: character.exhaustion,
   );
 }

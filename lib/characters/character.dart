@@ -1,5 +1,6 @@
 import '../combat/attack.dart';
 import '../rules/exhaustion_rules.dart';
+import '../rules/ruleset.dart';
 import 'ability.dart';
 
 /// A player character as the game master keeps it between sessions: fixed
@@ -201,6 +202,11 @@ class Character {
   /// Exhaustion level, 0 to [maxExhaustion]. Its effects depend on the
   /// ruleset (see `ExhaustionRules`).
   int exhaustion = 0;
+
+  /// The hit point maximum under [ruleset]: [maxHp], halved by exhaustion
+  /// under the 2014 rules.
+  int maxHpUnder(Ruleset ruleset) =>
+      ruleset.maxHpWithExhaustion(maxHp, exhaustion);
 
   int score(Ability ability) => abilityScores[ability]!;
 

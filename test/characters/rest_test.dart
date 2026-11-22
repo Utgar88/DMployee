@@ -41,6 +41,7 @@ class Scene {
     int hitDiceSpent = 0,
     bool stable = false,
     bool dead = false,
+    int exhaustion = 0,
   }) => characters.save(
     Character(
         name: 'Aria',
@@ -54,7 +55,8 @@ class Scene {
       ..tempHp = tempHp
       ..hitDiceSpent = hitDiceSpent
       ..isStable = stable
-      ..isDead = dead,
+      ..isDead = dead
+      ..exhaustion = exhaustion,
   );
 
   Future<Character> borin({int hp = 24, int hitDiceSpent = 0}) =>
@@ -515,6 +517,86 @@ void main() {
       final stored = await scene.stored(mira);
       expect(stored.hp, 15);
       expect(stored.pactSlotsRemaining, 2);
+    });
+  });
+
+  group('Erschöpfung bei Rasten', () {
+    for (final ruleset in Ruleset.values) {
+      test('${ruleset.label}: Eine lange Rast senkt die Erschöpfung um 1; '
+          'der Log nennt die Stufen', () async {
+        final scene = Scene(ruleset: ruleset);
+        final aria = await scene.aria(exhaustion: 2);
+
+        await scene.rests.longRest([aria]);
+
+        expect((await scene.stored(aria)).exhaustion, 1);
+        final event = (await scene.events()).single as RestEvent;
+        expect(event.exhaustionBefore, 2);
+        expect(event.exhaustionAfter, 1);
+      });
+    }
+
+    test('2014: Von Stufe 4 auf 3 sinkt die Erschöpfung zuerst, dann gibt '
+        'es volle TP', () async {
+      final scene = Scene();
+      final aria = await scene.aria(hp: 22, exhaustion: 4);
+
+      await scene.rests.longRest([aria]);
+
+      final stored = await scene.stored(aria);
+      expect(stored.exhaustion, 3);
+      expect(stored.hp, 44);
+      expect(
+        (await scene.events()).single,
+        isA<RestEvent>().having((e) => e.maxHp, 'maxHp', 44),
+      );
+    });
+
+    test(
+      '2014: Von Stufe 5 auf 4 gibt es TP bis zum halbierten Maximum',
+      () async {
+        final scene = Scene();
+        final aria = await scene.aria(hp: 10, exhaustion: 5);
+
+        await scene.rests.longRest([aria]);
+
+        final stored = await scene.stored(aria);
+        expect(stored.exhaustion, 4);
+        expect(stored.hp, 22);
+        expect(
+          (await scene.events()).single,
+          isA<RestEvent>().having((e) => e.maxHp, 'maxHp', 22),
+        );
+      },
+    );
+
+    test('Ohne Nutzen von der Rast bleibt die Erschöpfung', () async {
+      final scene = Scene();
+      final aria = await scene.aria(hp: 0, exhaustion: 2);
+
+      await scene.rests.longRest([aria]);
+
+      expect((await scene.stored(aria)).exhaustion, 2);
+    });
+
+    test('Eine kurze Rast ändert die Erschöpfung nicht', () async {
+      final scene = Scene();
+      final aria = await scene.aria(exhaustion: 2);
+
+      await scene.rests.shortRest([aria]);
+
+      expect((await scene.stored(aria)).exhaustion, 2);
+    });
+
+    test('2014: Trefferwürfel heilen höchstens bis zum halbierten Maximum; '
+        'ist es erreicht, geht keiner mehr', () async {
+      final scene = Scene(faces: [10]);
+      final aria = await scene.aria(hp: 15, exhaustion: 4);
+
+      final healed = await scene.rests.spendHitDie(aria);
+
+      expect(healed.hp, 22);
+      expect(scene.rests.canSpendHitDie(healed), isFalse);
     });
   });
 }

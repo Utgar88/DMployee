@@ -264,4 +264,45 @@ void main() {
       );
     });
   });
+
+  group('Log: Erschöpfung bei der langen Rast', () {
+    const lowered = RestEvent(
+      name: 'Aria',
+      kind: RestKind.long,
+      ruleset: '5e-2014',
+      hpBefore: 10,
+      hpAfter: 31,
+      maxHp: 31,
+      hitDiceBefore: 5,
+      hitDiceAfter: 5,
+      hitDiceTotal: 5,
+      exhaustionBefore: 4,
+      exhaustionAfter: 3,
+    );
+
+    test('Gesunkene Erschöpfung steht in den Details und wird gespeichert', () {
+      final details = formatter
+          .format(lowered)
+          .spans
+          .singleWhere((s) => s.hasDetails)
+          .details;
+
+      expect(details, contains('Erschöpfung: Stufe 4 → 3'));
+      final restored =
+          LogEvent.fromJson(lowered.type, lowered.toJson()) as RestEvent;
+      expect(restored.exhaustionBefore, 4);
+      expect(restored.exhaustionAfter, 3);
+    });
+
+    test('Ohne Erschöpfung gibt es keine solche Zeile', () {
+      final details = formatter
+          .format(longRest())
+          .spans
+          .singleWhere((s) => s.hasDetails)
+          .details;
+
+      expect(details.where((d) => d.startsWith('Erschöpfung')), isEmpty);
+      expect(longRest().toJson().containsKey('exhaustionBefore'), isFalse);
+    });
+  });
 }

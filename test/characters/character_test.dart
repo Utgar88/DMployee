@@ -2,6 +2,7 @@ import 'package:dmployee/characters/ability.dart';
 import 'package:dmployee/characters/character.dart';
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/dice/dice_expression.dart';
+import 'package:dmployee/rules/ruleset.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final longsword = Attack(
@@ -501,6 +502,14 @@ void main() {
 
       expect(Character.fromJson(aria.toJson()).exhaustion, 3);
       expect(aria.withValues(armorClass: 16).exhaustion, 3);
+    });
+
+    test('Die maximalen TP hängen von Erschöpfung und Regelwerk ab', () {
+      final aria = Character(name: 'Aria', maxHp: 30, armorClass: 15)
+        ..exhaustion = 4;
+
+      expect(aria.maxHpUnder(Ruleset.dnd2014), 15);
+      expect(aria.maxHpUnder(Ruleset.dnd2024), 30);
     });
 
     test('Ein früher gespeicherter Charakter ohne Angabe ist nicht '

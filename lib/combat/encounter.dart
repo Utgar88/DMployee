@@ -186,8 +186,12 @@ class Encounter {
   }
 
   /// Whether the character with [characterId] is in the encounter.
-  bool hasCharacter(int characterId) =>
-      _combatants.any((c) => c.characterId == characterId);
+  bool hasCharacter(int characterId) => combatantOf(characterId) != null;
+
+  /// The combatant standing for the character with [characterId]; null if
+  /// the character is not in the encounter.
+  Combatant? combatantOf(int characterId) =>
+      _combatants.where((c) => c.characterId == characterId).firstOrNull;
 
   /// Takes over changed sheet values of [character] (name, armor class,
   /// maximum hit points, initiative bonus, attacks) for its combatant. Hit
