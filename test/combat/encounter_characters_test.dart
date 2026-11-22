@@ -322,4 +322,60 @@ void main() {
       expect((await scene.stored(aria)).hp, 40);
     });
   });
+
+  group('Zustand nach einer Rast übernehmen', () {
+    test('Der Kämpfer übernimmt TP, temporäre TP, Todesrettungswürfe, stabil '
+        'und tot vom Charakter; der Log bleibt leer', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria();
+      final combatant = scene.encounter.addCharacter(aria);
+      await scene.encounter.damage(combatant, 30);
+      await scene.encounter.flush();
+      final logBefore = (await scene.log.entries()).length;
+
+      final rested = (await scene.stored(aria))
+        ..hp = 44
+        ..tempHp = 0;
+      scene.encounter.takeCharacterState(rested);
+      await scene.encounter.flush();
+
+      expect(combatant.hp, 44);
+      expect(combatant.tempHp, 0);
+      expect(combatant.isDown, isFalse);
+      expect(await scene.log.entries(), hasLength(logBefore));
+    });
+
+    test('Das Übernehmen behält die übrigen Werte des gespeicherten '
+        'Charakters, z.B. ausgegebene Trefferwürfel', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria();
+      scene.encounter.addCharacter(aria);
+      final rested = (await scene.stored(aria))
+        ..hp = 40
+        ..hitDiceSpent = 2;
+      await scene.characters.save(rested);
+
+      scene.encounter.takeCharacterState(rested);
+      await scene.encounter.flush();
+
+      final stored = await scene.stored(aria);
+      expect(stored.hp, 40);
+      expect(stored.hitDiceSpent, 2);
+    });
+
+    test('Ein Charakter, der nicht im Kampf ist, ändert nichts', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria();
+      final goblin = scene.encounter.add(
+        name: 'Goblin',
+        armorClass: 13,
+        maxHp: 7,
+      );
+
+      scene.encounter.takeCharacterState(aria..hp = 1);
+
+      expect(scene.encounter.combatants, [goblin]);
+      expect(goblin.hp, 7);
+    });
+  });
 }

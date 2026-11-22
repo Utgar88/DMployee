@@ -3,6 +3,8 @@ import '../combat/condition.dart';
 import '../combat/damage.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
+import '../rules/rest_rules.dart';
+import '../rules/ruleset.dart';
 import 'log_event.dart';
 import 'roll_record.dart';
 
@@ -69,6 +71,8 @@ class LogFormatter {
               : '${event.name} stirbt',
         ),
       ]),
+      RestEvent() => _rest(event),
+      HitDieEvent() => _hitDie(event),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -200,6 +204,88 @@ class LogFormatter {
       text = '${event.name} erhält ${event.amount} temporäre TP$source';
     }
     return LogLine([LogSpan(text)]);
+  }
+
+  /// `D&D 5e (2014)` for a stored ruleset id; the id itself if this app
+  /// version does not know it.
+  String _rulesetLabel(String id) => Ruleset.byId(id)?.label ?? id;
+
+  LogLine _rest(RestEvent event) {
+    final ruleset = Ruleset.byId(event.ruleset);
+    final rulesetLine = 'Regelwerk: ${_rulesetLabel(event.ruleset)}';
+    final short = event.kind == RestKind.short;
+
+    if (event.blocker case final blocker?) {
+      final reason = switch (blocker) {
+        RestBlocker.dead => 'tot',
+        RestBlocker.dying => 'liegt im Sterben',
+        RestBlocker.tooFewHp => '${event.hpBefore} TP',
+      };
+      final minHp = ruleset == null
+          ? null
+          : short
+          ? ruleset.minHpForShortRest
+          : ruleset.minHpForLongRest;
+      return LogLine([
+        LogSpan('${event.name} hat keinen Nutzen von der '),
+        LogSpan(
+          short ? 'kurzen Rast' : 'langen Rast',
+          details: [
+            rulesetLine,
+            if (blocker == RestBlocker.tooFewHp && minHp != null)
+              'Voraussetzung: mindestens $minHp TP',
+          ],
+        ),
+        LogSpan(' ($reason)'),
+      ]);
+    }
+
+    final summary =
+        'TP ${event.hpAfter}/${event.maxHp}, '
+        'Trefferwürfel ${event.hitDiceAfter}/${event.hitDiceTotal}';
+    if (short) {
+      return LogLine([
+        LogSpan('${event.name} macht eine kurze Rast: '),
+        LogSpan(summary, details: [rulesetLine]),
+      ]);
+    }
+    return LogLine([
+      LogSpan('${event.name} beendet eine lange Rast: '),
+      LogSpan(
+        summary,
+        details: [
+          rulesetLine,
+          'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
+              '(Maximum ${event.maxHp})',
+          if (event.tempHpBefore > 0) 'Temporäre TP: ${event.tempHpBefore} → 0',
+          'Trefferwürfel übrig: ${event.hitDiceBefore} → '
+              '${event.hitDiceAfter} von ${event.hitDiceTotal}',
+          if (ruleset != null)
+            'Zurück nach der langen Rast: ${ruleset.longRestHitDiceRule}',
+        ],
+      ),
+    ]);
+  }
+
+  LogLine _hitDie(HitDieEvent event) {
+    final effective = event.hpAfter - event.hpBefore;
+    return LogLine([
+      LogSpan('${event.name} gibt einen Trefferwürfel aus und wird um '),
+      LogSpan(
+        '${event.healing}',
+        details: [
+          ...rollDetails(event.roll),
+          if (event.healing != event.roll.total)
+            'Mindestens ${event.healing} TP nach '
+                '${_rulesetLabel(event.ruleset)}',
+          'Trefferpunkte: ${event.hpBefore} → ${event.hpAfter} '
+              '(Maximum ${event.maxHp})',
+          if (effective != event.healing) 'Davon wirksam: $effective',
+          'Trefferwürfel übrig: ${event.hitDiceLeft} von ${event.hitDiceTotal}',
+        ],
+      ),
+      const LogSpan(' TP geheilt'),
+    ]);
   }
 
   /// `vergiftet` for `poisoned`; the stored name itself if this app version

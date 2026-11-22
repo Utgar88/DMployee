@@ -4,6 +4,7 @@ import '../dice/modifier.dart';
 import 'roll_record.dart';
 
 part 'combat_events.dart';
+part 'rest_events.dart';
 
 /// Something that happened and is kept in the log.
 ///
@@ -35,6 +36,8 @@ sealed class LogEvent {
       BuffEvent.typeName => BuffEvent.fromJson(json),
       TempHpEvent.typeName => TempHpEvent.fromJson(json),
       CombatantRevivedEvent.typeName => CombatantRevivedEvent.fromJson(json),
+      RestEvent.typeName => RestEvent.fromJson(json),
+      HitDieEvent.typeName => HitDieEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

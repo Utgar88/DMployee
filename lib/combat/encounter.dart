@@ -191,6 +191,25 @@ class Encounter {
     );
   }
 
+  /// Takes over the current state of [character] (hit points, temporary
+  /// hit points, death saving throws, stable, dead) for its combatant, e.g.
+  /// after a rest. A correction, not an event: nothing is logged. Does
+  /// nothing if the character is not in the encounter.
+  void takeCharacterState(Character character) {
+    final combatant = _combatants
+        .where((c) => c.characterId != null && c.characterId == character.id)
+        .firstOrNull;
+    if (combatant == null) return;
+    combatant
+      ..hp = character.hp
+      ..tempHp = character.tempHp
+      ..deathSaveSuccesses = character.deathSaveSuccesses
+      ..deathSaveFailures = character.deathSaveFailures
+      ..isStable = character.isStable
+      ..isDead = character.isDead;
+    unawaited(_save());
+  }
+
   /// Unlinks the combatant of the character with [characterId], e.g. after
   /// the character was deleted. The combatant stays in the encounter.
   void forgetCharacter(int characterId) {
