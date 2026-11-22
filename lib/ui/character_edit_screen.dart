@@ -47,6 +47,20 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
     text: _original?.armorClass.toString(),
   );
   late int _hitDie = _original?.hitDie ?? 8;
+  late final _slots = {
+    for (var level = 1; level <= 9; level++)
+      level: TextEditingController(
+        text: _blankIfZero(_original?.slotsTotal(level) ?? 0),
+      ),
+  };
+  late final _pactSlots = TextEditingController(
+    text: _blankIfZero(_original?.pactSlots ?? 0),
+  );
+  late final _pactLevel = TextEditingController(
+    text: (_original?.pactSlots ?? 0) > 0 ? '${_original!.pactSlotLevel}' : '',
+  );
+
+  static String _blankIfZero(int value) => value == 0 ? '' : '$value';
   late final _saves = {...?_original?.saveProficiencies};
   late final _attacks = [...?_original?.attacks];
   String? _errorText;
@@ -72,6 +86,9 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
       ..._scores.values,
       _hp,
       _armorClass,
+      ..._slots.values,
+      _pactSlots,
+      _pactLevel,
     ]) {
       controller.dispose();
     }
@@ -113,6 +130,29 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
       scores[ability] = score;
     }
 
+    final spellSlots = <int, int>{};
+    for (final MapEntry(key: level, value: controller) in _slots.entries) {
+      final count = controller.text.isEmpty ? 0 : int.tryParse(controller.text);
+      if (count == null || count > 9) {
+        return _fail('Zauberplätze liegen zwischen 0 und 9 je Grad.');
+      }
+      if (count > 0) spellSlots[level] = count;
+    }
+    final pactSlots = _pactSlots.text.isEmpty
+        ? 0
+        : int.tryParse(_pactSlots.text);
+    if (pactSlots == null || pactSlots > 9) {
+      return _fail('Zauberplätze liegen zwischen 0 und 9 je Grad.');
+    }
+    var pactLevel = 1;
+    if (pactSlots > 0) {
+      final level = int.tryParse(_pactLevel.text);
+      if (level == null || level < 1 || level > 5) {
+        return _fail('Paktmagie braucht einen Grad zwischen 1 und 5.');
+      }
+      pactLevel = level;
+    }
+
     final original = _original;
     final character = original == null
         ? Character(
@@ -126,6 +166,9 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
             saveProficiencies: _saves,
             attacks: _attacks,
             hitDie: _hitDie,
+            spellSlots: spellSlots,
+            pactSlots: pactSlots,
+            pactSlotLevel: pactLevel,
           )
         : original.withValues(
             name: _name.text,
@@ -138,6 +181,9 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
             saveProficiencies: _saves,
             attacks: _attacks,
             hitDie: _hitDie,
+            spellSlots: spellSlots,
+            pactSlots: pactSlots,
+            pactSlotLevel: pactLevel,
           );
     await widget.characters.save(character);
     widget.encounter.applyCharacter(character);
@@ -288,6 +334,8 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
                     for (final ability in Ability.values)
                       _abilityRow(context, ability),
                     const SizedBox(height: 16),
+                    _spellSlotsSection(context),
+                    const SizedBox(height: 16),
                     Text('Angriffe', style: theme.textTheme.titleMedium),
                     for (final (index, attack) in _attacks.indexed)
                       ListTile(
@@ -320,6 +368,68 @@ class _CharacterEditScreenState extends State<CharacterEditScreen> {
 
   /// Score field, modifier, saving throw proficiency and saving throw bonus
   /// of one ability.
+  Widget _spellSlotsSection(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget slotField(int level) => Expanded(
+      child: inputField(
+        'slots-$level',
+        '$level. Grad',
+        _slots[level]!,
+        formatters: digitsInput,
+        number: true,
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Zauberplätze', style: theme.textTheme.titleMedium),
+        Text('Anzahl je Grad; leer = keine', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 8),
+        for (final row in [
+          [1, 2, 3],
+          [4, 5, 6],
+          [7, 8, 9],
+        ])
+          Row(
+            children: [
+              slotField(row[0]),
+              const SizedBox(width: 12),
+              slotField(row[1]),
+              const SizedBox(width: 12),
+              slotField(row[2]),
+            ],
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: inputField(
+                'pact-slots',
+                'Paktmagie: Plätze',
+                _pactSlots,
+                formatters: digitsInput,
+                number: true,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: inputField(
+                'pact-level',
+                'Paktmagie: Grad',
+                _pactLevel,
+                formatters: digitsInput,
+                number: true,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          'Paktmagie (Hexenmeister) kommt bei der kurzen Rast zurück.',
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
   Widget _hitDiceRow(BuildContext context) {
     final original = _original;
     return Column(
