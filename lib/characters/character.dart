@@ -10,7 +10,8 @@ import 'ability.dart';
 class Character {
   /// Throws an [ArgumentError] for an empty [name], a [level] outside 1 to
   /// 20, ability scores outside 1 to 30, [maxHp] below 1, [armorClass]
-  /// below 0 or a [hitDie] not in [hitDieSizes].
+  /// below 0, a [hitDie] not in [hitDieSizes], spell slots outside levels
+  /// 1 to 9 or counts outside 0 to 9, or a [pactSlotLevel] outside 1 to 5.
   Character({
     this.id,
     required String name,
@@ -23,6 +24,9 @@ class Character {
     Set<Ability> saveProficiencies = const {},
     List<Attack> attacks = const [],
     this.hitDie = 8,
+    Map<int, int> spellSlots = const {},
+    this.pactSlots = 0,
+    this.pactSlotLevel = 1,
     int? hp,
   }) : name = name.trim(),
        player = player.trim(),
@@ -33,6 +37,10 @@ class Character {
        }),
        saveProficiencies = Set.unmodifiable(saveProficiencies),
        attacks = List.unmodifiable(attacks),
+       spellSlots = Map.unmodifiable({
+         for (final MapEntry(:key, :value) in spellSlots.entries)
+           if (value != 0 || key < 1 || key > 9) key: value,
+       }),
        hp = hp ?? maxHp {
     if (this.name.isEmpty) {
       throw ArgumentError.value(name, 'name', 'must not be empty');
@@ -57,6 +65,26 @@ class Character {
         'hitDie',
         'must be one of $hitDieSizes',
       );
+    }
+    for (final MapEntry(:key, :value) in this.spellSlots.entries) {
+      if (key < 1 || key > 9) {
+        throw ArgumentError.value(key, 'spellSlots', 'levels are 1 to 9');
+      }
+      _checkSlotCount(value, 'spellSlots');
+    }
+    _checkSlotCount(pactSlots, 'pactSlots');
+    if (pactSlotLevel < 1 || pactSlotLevel > 5) {
+      throw ArgumentError.value(
+        pactSlotLevel,
+        'pactSlotLevel',
+        'must be 1 to 5',
+      );
+    }
+  }
+
+  static void _checkSlotCount(int count, String name) {
+    if (count < 0 || count > 9) {
+      throw ArgumentError.value(count, name, 'must be 0 to 9');
     }
   }
 
@@ -83,9 +111,14 @@ class Character {
             Attack.fromJson((attack as Map).cast<String, Object?>()),
         ],
         hitDie: json['hitDie'] as int? ?? 8,
+        spellSlots: _levelMap(json['spellSlots']),
+        pactSlots: json['pactSlots'] as int? ?? 0,
+        pactSlotLevel: json['pactSlotLevel'] as int? ?? 1,
         hp: json['hp']! as int,
       )
       ..hitDiceSpent = json['hitDiceSpent'] as int? ?? 0
+      ..slotsUsed.addAll(_levelMap(json['slotsUsed']))
+      ..pactSlotsUsed = json['pactSlotsUsed'] as int? ?? 0
       ..tempHp = json['tempHp'] as int? ?? 0
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
@@ -129,6 +162,32 @@ class Character {
 
   int get hitDiceRemaining => hitDiceTotal - hitDiceSpent;
 
+  /// Spell slots per spell level (1 to 9); levels without slots are left
+  /// out. Entered by hand until classes come from the compendium.
+  final Map<int, int> spellSlots;
+
+  /// Pact magic (warlock): [pactSlots] slots, all of [pactSlotLevel]. They
+  /// come back on a short rest.
+  final int pactSlots;
+  final int pactSlotLevel;
+
+  /// Used spell slots per level; levels without entry have none used.
+  final Map<int, int> slotsUsed = {};
+
+  /// Used pact magic slots.
+  int pactSlotsUsed = 0;
+
+  /// Levels that have spell slots, in ascending order.
+  List<int> get slotLevels => spellSlots.keys.toList()..sort();
+
+  bool get hasSpellSlots => spellSlots.isNotEmpty || pactSlots > 0;
+
+  int slotsTotal(int level) => spellSlots[level] ?? 0;
+
+  int slotsRemaining(int level) => slotsTotal(level) - (slotsUsed[level] ?? 0);
+
+  int get pactSlotsRemaining => pactSlots - pactSlotsUsed;
+
   /// Current state, changed by combat.
   int hp;
   int tempHp = 0;
@@ -159,7 +218,7 @@ class Character {
   /// A copy with other sheet values; values left out stay. Id and current
   /// state are kept. An unhurt character has full hit points with a new
   /// [maxHp]; otherwise hit points stay but never exceed the new maximum.
-  /// Spent hit dice never exceed a lower [level].
+  /// Spent hit dice and used spell slots never exceed what is left.
   ///
   /// Invalid values throw an [ArgumentError] like the constructor.
   Character withValues({
@@ -173,6 +232,9 @@ class Character {
     Set<Ability>? saveProficiencies,
     List<Attack>? attacks,
     int? hitDie,
+    Map<int, int>? spellSlots,
+    int? pactSlots,
+    int? pactSlotLevel,
   }) {
     final newLevel = level ?? this.level;
     final newMaxHp = maxHp ?? this.maxHp;
@@ -189,9 +251,13 @@ class Character {
         saveProficiencies: saveProficiencies ?? this.saveProficiencies,
         attacks: attacks ?? this.attacks,
         hitDie: hitDie ?? this.hitDie,
+        spellSlots: spellSlots ?? this.spellSlots,
+        pactSlots: pactSlots ?? this.pactSlots,
+        pactSlotLevel: pactSlotLevel ?? this.pactSlotLevel,
         hp: unhurt || hp > newMaxHp ? newMaxHp : hp,
       )
       ..hitDiceSpent = hitDiceSpent > newLevel ? newLevel : hitDiceSpent
+      ..takeUsedSlots(this)
       ..tempHp = tempHp
       ..deathSaveSuccesses = deathSaveSuccesses
       ..deathSaveFailures = deathSaveFailures
@@ -218,10 +284,44 @@ class Character {
     'hitDie': hitDie,
     'hp': hp,
     'hitDiceSpent': hitDiceSpent,
+    if (spellSlots.isNotEmpty)
+      'spellSlots': {
+        for (final MapEntry(:key, :value) in spellSlots.entries) '$key': value,
+      },
+    if (slotsUsed.values.any((used) => used > 0))
+      'slotsUsed': {
+        for (final MapEntry(:key, :value) in slotsUsed.entries)
+          if (value > 0) '$key': value,
+      },
+    if (pactSlots > 0) ...{
+      'pactSlots': pactSlots,
+      'pactSlotLevel': pactSlotLevel,
+    },
+    if (pactSlotsUsed > 0) 'pactSlotsUsed': pactSlotsUsed,
     'tempHp': tempHp,
     'deathSaveSuccesses': deathSaveSuccesses,
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+  };
+
+  /// Takes over the used slots of [other], but never more than this
+  /// character has.
+  void takeUsedSlots(Character other) {
+    slotsUsed.clear();
+    for (final MapEntry(key: level, value: used) in other.slotsUsed.entries) {
+      final capped = used > slotsTotal(level) ? slotsTotal(level) : used;
+      if (capped > 0) slotsUsed[level] = capped;
+    }
+    pactSlotsUsed = other.pactSlotsUsed > pactSlots
+        ? pactSlots
+        : other.pactSlotsUsed;
+  }
+
+  /// Reads `{"1": 4, "3": 2}` as level → count.
+  static Map<int, int> _levelMap(Object? json) => {
+    if (json is Map)
+      for (final MapEntry(:key, :value) in json.entries)
+        ?int.tryParse('$key'): value as int,
   };
 }

@@ -327,4 +327,165 @@ void main() {
       expect(restored.hitDiceRemaining, 4);
     });
   });
+
+  group('Charakter: Zauberplätze', () {
+    Character caster() => Character(
+      name: 'Mira',
+      level: 5,
+      maxHp: 28,
+      armorClass: 12,
+      spellSlots: {1: 4, 2: 3, 3: 2},
+    );
+
+    test('Ein neuer Charakter hat keine Zauberplätze und keine '
+        'Paktmagie', () {
+      final aria = Character(name: 'Aria', maxHp: 30, armorClass: 15);
+
+      expect(aria.hasSpellSlots, isFalse);
+      for (var level = 1; level <= 9; level++) {
+        expect(aria.slotsTotal(level), 0);
+      }
+      expect(aria.pactSlots, 0);
+    });
+
+    test('Zauberplätze werden je Grad 1 bis 9 angegeben; nicht angegebene '
+        'Grade haben keine', () {
+      final mira = caster();
+
+      expect(mira.hasSpellSlots, isTrue);
+      expect(mira.slotsTotal(1), 4);
+      expect(mira.slotsTotal(3), 2);
+      expect(mira.slotsTotal(4), 0);
+      expect(mira.slotLevels, [1, 2, 3]);
+    });
+
+    test('Verbrauchte Zauberplätze verringern die übrigen', () {
+      final mira = caster()..slotsUsed[1] = 3;
+
+      expect(mira.slotsRemaining(1), 1);
+      expect(mira.slotsRemaining(2), 3);
+    });
+
+    test('Paktmagie hat eine Anzahl und einen gemeinsamen Grad', () {
+      final hex = Character(
+        name: 'Hex',
+        level: 5,
+        maxHp: 30,
+        armorClass: 13,
+        pactSlots: 2,
+        pactSlotLevel: 3,
+      )..pactSlotsUsed = 1;
+
+      expect(hex.hasSpellSlots, isTrue);
+      expect(hex.pactSlots, 2);
+      expect(hex.pactSlotLevel, 3);
+      expect(hex.pactSlotsRemaining, 1);
+    });
+
+    test('Ungültige Angaben werden abgelehnt: Grad außerhalb 1 bis 9, '
+        'Anzahl unter 0 oder über 9, Paktgrad außerhalb 1 bis 5', () {
+      Character make({
+        Map<int, int> slots = const {},
+        int pact = 0,
+        int pactLevel = 1,
+      }) => Character(
+        name: 'A',
+        maxHp: 10,
+        armorClass: 10,
+        spellSlots: slots,
+        pactSlots: pact,
+        pactSlotLevel: pactLevel,
+      );
+
+      expect(() => make(slots: {0: 1}), throwsArgumentError);
+      expect(() => make(slots: {10: 1}), throwsArgumentError);
+      expect(() => make(slots: {1: -1}), throwsArgumentError);
+      expect(() => make(slots: {1: 10}), throwsArgumentError);
+      expect(() => make(pact: -1), throwsArgumentError);
+      expect(() => make(pact: 10), throwsArgumentError);
+      expect(() => make(pact: 2, pactLevel: 0), throwsArgumentError);
+      expect(() => make(pact: 2, pactLevel: 6), throwsArgumentError);
+    });
+
+    test('Ein Grad mit 0 Plätzen zählt nicht als vorhanden', () {
+      final mira = Character(
+        name: 'Mira',
+        maxHp: 10,
+        armorClass: 10,
+        spellSlots: {1: 0, 2: 2},
+      );
+
+      expect(mira.slotLevels, [2]);
+    });
+
+    test('Zauberplätze lassen sich über den Bogen ändern; verbrauchte '
+        'bleiben, höchstens so viele wie es noch gibt', () {
+      final mira = caster()
+        ..slotsUsed[1] = 2
+        ..slotsUsed[3] = 2;
+
+      final changed = mira.withValues(spellSlots: {1: 4, 2: 3, 3: 1});
+
+      expect(changed.slotsTotal(3), 1);
+      expect(changed.slotsUsed[1], 2);
+      expect(changed.slotsRemaining(3), 0);
+      expect(changed.slotsUsed[3], 1);
+    });
+
+    test('Weniger Paktmagie-Plätze begrenzen die verbrauchten', () {
+      final hex = Character(
+        name: 'Hex',
+        maxHp: 30,
+        armorClass: 13,
+        pactSlots: 2,
+        pactSlotLevel: 3,
+      )..pactSlotsUsed = 2;
+
+      final changed = hex.withValues(pactSlots: 1, pactSlotLevel: 2);
+
+      expect(changed.pactSlots, 1);
+      expect(changed.pactSlotLevel, 2);
+      expect(changed.pactSlotsUsed, 1);
+    });
+
+    test('Zauberplätze, Paktmagie und Verbrauch werden gespeichert', () {
+      final mira =
+          Character(
+              name: 'Mira',
+              maxHp: 28,
+              armorClass: 12,
+              spellSlots: {1: 4, 3: 2},
+              pactSlots: 2,
+              pactSlotLevel: 4,
+            )
+            ..slotsUsed[1] = 1
+            ..slotsUsed[3] = 2
+            ..pactSlotsUsed = 1;
+
+      final restored = Character.fromJson(mira.toJson());
+
+      expect(restored.slotsTotal(1), 4);
+      expect(restored.slotsTotal(3), 2);
+      expect(restored.slotsRemaining(1), 3);
+      expect(restored.slotsRemaining(3), 0);
+      expect(restored.pactSlots, 2);
+      expect(restored.pactSlotLevel, 4);
+      expect(restored.pactSlotsRemaining, 1);
+    });
+
+    test('Ein früher gespeicherter Charakter ohne Angaben hat keine '
+        'Zauberplätze', () {
+      final json = Character(name: 'Aria', maxHp: 30, armorClass: 15).toJson()
+        ..remove('spellSlots')
+        ..remove('slotsUsed')
+        ..remove('pactSlots')
+        ..remove('pactSlotLevel')
+        ..remove('pactSlotsUsed');
+
+      final restored = Character.fromJson(json);
+
+      expect(restored.hasSpellSlots, isFalse);
+      expect(restored.pactSlotsRemaining, 0);
+    });
+  });
 }
