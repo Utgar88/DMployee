@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../characters/character_repository.dart';
+import '../characters/exhaustion.dart';
 import '../characters/rest.dart';
 import '../characters/spell_slots.dart';
 import '../combat/encounter.dart';
@@ -61,6 +62,13 @@ class _HomeScreenState extends State<HomeScreen> {
     encounter: _encounter,
   );
 
+  late final _exhaustion = ExhaustionService(
+    characters: _characters,
+    log: widget.log,
+    settings: _settings,
+    encounter: _encounter,
+  );
+
   late final _spellSlots = SpellSlotService(
     characters: _characters,
     log: widget.log,
@@ -84,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
           encounter: _encounter,
           rests: _rests,
           spellSlots: _spellSlots,
+          exhaustion: _exhaustion,
         ),
       ),
     );
@@ -97,6 +106,8 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(builder: (_) => SettingsScreen(settings: _settings)),
     );
+    // Values shown in the combat may depend on the ruleset.
+    if (mounted) setState(() {});
   }
 
   @override

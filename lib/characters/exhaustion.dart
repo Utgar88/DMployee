@@ -28,6 +28,9 @@ class ExhaustionService {
 
   Ruleset get _rules => _settings.ruleset;
 
+  /// The ruleset exhaustion follows right now.
+  Ruleset get ruleset => _rules;
+
   /// Sets the exhaustion of [given] to [level] and logs it. At the highest
   /// level the character dies; lowering it again does not bring the
   /// character back. Under the 2014 rules, hit points above the halved

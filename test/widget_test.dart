@@ -111,6 +111,60 @@ void main() {
       expect(find.text('Borin'), findsOneWidget);
     });
 
+    testWidgets('Die Charakterliste aus dem Menü bietet die Erschöpfung an; '
+        'sie folgt dem eingestellten Regelwerk', (tester) async {
+      final characters = InMemoryCharacterRepository();
+      await characters.save(
+        Character(name: 'Borin', maxHp: 24, armorClass: 18),
+      );
+      final settings = AppSettings()..setRuleset(Ruleset.dnd2024);
+      await tester.pumpWidget(
+        DMployeeApp(
+          log: InMemoryLogRepository(),
+          characters: characters,
+          settings: settings,
+        ),
+      );
+
+      await openCharacters(tester);
+      await tester.tap(find.byKey(const Key('exhaustion-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('exhaustion-up')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('−2 auf alle W20-Würfe'), findsOneWidget);
+    });
+
+    testWidgets('Der Kampf folgt dem eingestellten Regelwerk', (tester) async {
+      final characters = InMemoryCharacterRepository();
+      await characters.save(
+        Character(name: 'Borin', maxHp: 24, armorClass: 18),
+      );
+      final settings = AppSettings()..setRuleset(Ruleset.dnd2024);
+      await tester.pumpWidget(
+        DMployeeApp(
+          log: InMemoryLogRepository(),
+          characters: characters,
+          settings: settings,
+        ),
+      );
+
+      await openCharacters(tester);
+      await tester.tap(find.byKey(const Key('to-combat-0')));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('nav-combat')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('exhaustion-0')));
+      await tester.tap(find.byKey(const Key('exhaustion-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('exhaustion-up')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('−2 auf alle W20-Würfe'), findsOneWidget);
+    });
+
     testWidgets('Über das Menü öffnen sich die Einstellungen; dort gewählte '
         'Regeln gelten für die ganze App', (tester) async {
       final settings = await AppSettings.load(InMemorySettingsRepository());

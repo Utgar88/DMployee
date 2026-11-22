@@ -13,7 +13,10 @@ import 'form_widgets.dart';
 import '../characters/character.dart';
 import '../characters/character_repository.dart';
 import '../characters/spell_slots.dart';
+import '../rules/exhaustion_rules.dart';
+import '../rules/ruleset.dart';
 import 'character_edit_screen.dart';
+import 'exhaustion_dialog.dart';
 import 'menu_button.dart';
 import 'spell_slots_dialog.dart';
 
@@ -120,7 +123,8 @@ class _CombatScreenState extends State<CombatScreen> {
                   title: Text(character.name),
                   subtitle: Text(
                     '${character.classAndLevel} · '
-                    'TP ${character.hp}/${character.maxHp}',
+                    'TP ${character.hp}/'
+                    '${character.maxHpUnder(_encounter.ruleset)}',
                   ),
                   onTap: () => Navigator.pop(context, character),
                 ),
@@ -225,6 +229,20 @@ class _CombatScreenState extends State<CombatScreen> {
     );
     if (event == null || !mounted) return;
     setState(() => _lastAction = widget.formatter.format(event).text);
+  }
+
+  Future<void> _openExhaustion(Combatant combatant) async {
+    await showExhaustion(
+      context,
+      name: combatant.name,
+      level: combatant.exhaustion,
+      ruleset: _encounter.ruleset,
+      onChange: (level) async {
+        await _encounter.setExhaustion(combatant, level);
+        return combatant.exhaustion;
+      },
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _editTraits(Combatant combatant) async {
@@ -428,6 +446,8 @@ class _CombatScreenState extends State<CombatScreen> {
                 else if (combatant.isDown)
                   const _Badge('am Boden'),
                 if (combatant.isStable) const _Badge('stabil'),
+                if (combatant.exhaustion > 0)
+                  _Badge('Erschöpft ${combatant.exhaustion}'),
                 IconButton(
                   key: Key('edit-$index'),
                   tooltip: 'Kämpfer bearbeiten',
@@ -451,7 +471,7 @@ class _CombatScreenState extends State<CombatScreen> {
                 Expanded(
                   child: Text(
                     'RK ${_armorClassText(combatant)} · '
-                    '${_hpText(combatant)}',
+                    '${_hpText(_encounter, combatant)}',
                     key: Key('stats-$index'),
                   ),
                 ),
@@ -597,6 +617,12 @@ class _CombatScreenState extends State<CombatScreen> {
                     icon: const Icon(Icons.auto_awesome_outlined, size: 18),
                     label: const Text('Zauberplätze'),
                   ),
+                TextButton.icon(
+                  key: Key('exhaustion-$index'),
+                  onPressed: () => _openExhaustion(combatant),
+                  icon: const Icon(Icons.bedtime_outlined, size: 18),
+                  label: const Text('Erschöpfung'),
+                ),
                 TextButton.icon(
                   key: Key('traits-$index'),
                   onPressed: () => _editTraits(combatant),
@@ -898,6 +924,17 @@ String _modeWord(RollMode mode) => switch (mode) {
   RollMode.normal => 'normal',
 };
 
+/// What exhaustion [level] means for attacks under [ruleset]; null if
+/// nothing.
+String? _exhaustionAttackNote(Ruleset ruleset, int level) {
+  if (ruleset.exhaustionDisadvantageOnAttacksAndSaves(level)) {
+    return 'Nachteil auf den Angriff';
+  }
+  final penalty = ruleset.exhaustionD20Penalty(level);
+  if (penalty != 0) return '−${-penalty} auf den Angriffswurf';
+  return null;
+}
+
 /// What [condition] means for attacks made by its bearer.
 String _attackerNote(Condition condition) {
   final effect = condition.attackerEffect;
@@ -1014,7 +1051,13 @@ class _TargetDialogState extends State<_TargetDialog> {
   Widget build(BuildContext context) {
     final combatants = widget.encounter.combatants;
     final attacker = widget.attacker;
-    final anyConditions = combatants.any((c) => c.conditions.isNotEmpty);
+    final exhaustionNote = _exhaustionAttackNote(
+      widget.encounter.ruleset,
+      attacker.exhaustion,
+    );
+    final anyConditions =
+        combatants.any((c) => c.conditions.isNotEmpty) ||
+        exhaustionNote != null;
 
     return AlertDialog(
       title: Text('${widget.attacker.name}: ${widget.attack.name}'),
@@ -1050,7 +1093,8 @@ class _TargetDialogState extends State<_TargetDialog> {
                 dense: true,
                 title: const Text('Zustände berücksichtigen'),
                 subtitle: const Text(
-                  'Vorteil und Nachteil aus Zuständen kommen von selbst dazu',
+                  'Vorteil und Nachteil aus Zuständen und Erschöpfung kommen '
+                  'von selbst dazu',
                 ),
                 value: _applyConditions,
                 onChanged: (value) => setState(() => _applyConditions = value),
@@ -1060,6 +1104,12 @@ class _TargetDialogState extends State<_TargetDialog> {
                 '${attacker.name} ist '
                 '${active.condition.label.toLowerCase()}: '
                 '${_attackerNote(active.condition)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            if (exhaustionNote != null)
+              Text(
+                '${attacker.name} ist erschöpft '
+                '(Stufe ${attacker.exhaustion}): $exhaustionNote',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             if (_attackBuffs.isNotEmpty) ...[
@@ -1140,7 +1190,8 @@ class _TargetDialogState extends State<_TargetDialog> {
                   subtitle: Text(
                     [
                       'RK ${combatant.effectiveArmorClass} · '
-                          'TP ${combatant.hp}/${combatant.maxHp}',
+                          'TP ${combatant.hp}/'
+                          '${widget.encounter.maxHpOf(combatant)}',
                       for (final active in combatant.conditions)
                         '${active.condition.label}: '
                             '${_targetNote(active.condition)}',
@@ -1162,9 +1213,10 @@ class _TargetDialogState extends State<_TargetDialog> {
   }
 }
 
-/// `TP 18/20`, with temporary hit points `TP 18/20 (+8 temporär)`.
-String _hpText(Combatant combatant) =>
-    'TP ${combatant.hp}/${combatant.maxHp}'
+/// `TP 18/20`, with temporary hit points `TP 18/20 (+8 temporär)`. The
+/// maximum is the one in force right now (see `Encounter.maxHpOf`).
+String _hpText(Encounter encounter, Combatant combatant) =>
+    'TP ${combatant.hp}/${encounter.maxHpOf(combatant)}'
     '${combatant.tempHp > 0 ? ' (+${combatant.tempHp} temporär)' : ''}';
 
 /// Damage, healing or temporary hit points for one combatant without an
@@ -1242,7 +1294,7 @@ class _HpDialogState extends State<_HpDialog> {
     final combatant = widget.combatant;
 
     return AlertDialog(
-      title: Text('${combatant.name}: ${_hpText(combatant)}'),
+      title: Text('${combatant.name}: ${_hpText(widget.encounter, combatant)}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1453,8 +1505,11 @@ class _ReviveDialogState extends State<_ReviveDialog> {
     super.dispose();
   }
 
+  bool get _blockedByExhaustion =>
+      widget.encounter.ruleset.exhaustionKills(widget.combatant.exhaustion);
+
   Future<void> _revive() async {
-    final maxHp = widget.combatant.maxHp;
+    final maxHp = widget.encounter.maxHpOf(widget.combatant);
     final hp = int.tryParse(_hp.text);
     if (hp == null || hp < 1 || hp > maxHp) {
       setState(() => _errorText = 'Bitte 1 bis $maxHp TP eintragen.');
@@ -1491,6 +1546,13 @@ class _ReviveDialogState extends State<_ReviveDialog> {
               _source,
               helper: 'z. B. Wiederbeleben',
             ),
+            if (_blockedByExhaustion)
+              formError(
+                context,
+                'Erst die Erschöpfung senken: Auf Stufe '
+                '${widget.combatant.exhaustion} ist '
+                '${widget.combatant.name} tot.',
+              ),
             if (_errorText != null) formError(context, _errorText!),
           ],
         ),
@@ -1502,7 +1564,7 @@ class _ReviveDialogState extends State<_ReviveDialog> {
         ),
         FilledButton(
           key: const Key('revive-confirm'),
-          onPressed: _revive,
+          onPressed: _blockedByExhaustion ? null : _revive,
           child: const Text('Wiederbeleben'),
         ),
       ],

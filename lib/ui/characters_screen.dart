@@ -2,11 +2,13 @@ import 'package:material_ui/material_ui.dart';
 
 import '../characters/character.dart';
 import '../characters/character_repository.dart';
+import '../characters/exhaustion.dart';
 import '../characters/rest.dart';
 import '../characters/spell_slots.dart';
 import '../combat/encounter.dart';
 import '../log/log_event.dart';
 import 'character_edit_screen.dart';
+import 'exhaustion_dialog.dart';
 import 'rest_screens.dart';
 import 'spell_slots_dialog.dart';
 
@@ -19,6 +21,7 @@ class CharactersScreen extends StatefulWidget {
     required this.encounter,
     this.rests,
     this.spellSlots,
+    this.exhaustion,
   });
 
   final CharacterRepository characters;
@@ -29,6 +32,9 @@ class CharactersScreen extends StatefulWidget {
 
   /// Using spell slots; without it the list offers no button for them.
   final SpellSlotService? spellSlots;
+
+  /// Changing exhaustion; without it the list offers no button for it.
+  final ExhaustionService? exhaustion;
 
   @override
   State<CharactersScreen> createState() => _CharactersScreenState();
@@ -48,6 +54,21 @@ class _CharactersScreenState extends State<CharactersScreen> {
     await widget.encounter.flush();
     final list = await widget.characters.all();
     if (mounted) setState(() => _list = list);
+  }
+
+  Future<void> _openExhaustion(
+    ExhaustionService service,
+    Character character,
+  ) async {
+    await showExhaustion(
+      context,
+      name: character.name,
+      level: character.exhaustion,
+      ruleset: service.ruleset,
+      onChange: (level) async =>
+          (await service.set(character, level)).exhaustion,
+    );
+    await _load();
   }
 
   Future<void> _open([Character? character]) async {
@@ -181,7 +202,9 @@ class _CharactersScreenState extends State<CharactersScreen> {
                         Row(
                           children: [
                             Text(
-                              'TP ${character.hp}/${character.maxHp}$temp · '
+                              'TP ${character.hp}/'
+                              '${character.maxHpUnder(widget.encounter.ruleset)}'
+                              '$temp · '
                               'RK ${character.armorClass}',
                               key: Key('character-stats-$index'),
                             ),
@@ -202,9 +225,25 @@ class _CharactersScreenState extends State<CharactersScreen> {
                           key: Key('character-hit-dice-$index'),
                           style: theme.textTheme.bodySmall,
                         ),
+                        if (character.exhaustion > 0)
+                          Text(
+                            'Erschöpfung: Stufe ${character.exhaustion}',
+                            key: Key('character-exhaustion-$index'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
                       ],
                     ),
                   ),
+                  if (widget.exhaustion case final service?)
+                    IconButton(
+                      key: Key('exhaustion-$index'),
+                      tooltip: 'Erschöpfung',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _openExhaustion(service, character),
+                      icon: const Icon(Icons.bedtime_outlined),
+                    ),
                   if (inCombat)
                     Chip(
                       key: Key('in-combat-$index'),
