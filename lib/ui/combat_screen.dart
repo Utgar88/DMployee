@@ -50,7 +50,37 @@ class _CombatScreenState extends State<CombatScreen> {
   /// Text of the most recent attack, shown above the list.
   String? _lastAction;
 
+  /// Ids of stored characters with spell slots; only they get the button.
+  Set<int> _casters = {};
+
   Encounter get _encounter => widget.encounter;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCasters();
+  }
+
+  /// The screen stays alive while characters are edited elsewhere; every
+  /// rebuild from outside reads them again.
+  @override
+  void didUpdateWidget(CombatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _loadCasters();
+  }
+
+  Future<void> _loadCasters() async {
+    final characters = widget.characters;
+    if (characters == null || widget.spellSlots == null) return;
+    final all = await characters.all();
+    if (!mounted) return;
+    setState(() {
+      _casters = {
+        for (final character in all)
+          if (character.hasSpellSlots) character.id!,
+      };
+    });
+  }
 
   Future<void> _addCombatant() async {
     final added = await showDialog<bool>(
@@ -105,7 +135,11 @@ class _CombatScreenState extends State<CombatScreen> {
         ],
       ),
     );
-    if (picked != null) setState(() => _encounter.addCharacter(picked));
+    if (picked == null) return;
+    setState(() {
+      _encounter.addCharacter(picked);
+      if (picked.hasSpellSlots) _casters = {..._casters, picked.id!};
+    });
   }
 
   Future<void> _openSpellSlots(SpellSlotService service, int id) async {
@@ -131,6 +165,7 @@ class _CombatScreenState extends State<CombatScreen> {
           ),
         ),
       );
+      await _loadCasters();
       if (mounted) setState(() {});
       return;
     }
@@ -554,10 +589,8 @@ class _CombatScreenState extends State<CombatScreen> {
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Effekt'),
                 ),
-                if ((widget.spellSlots, combatant.characterId) case (
-                  final service?,
-                  final id?,
-                ))
+                if ((widget.spellSlots, combatant.characterId)
+                    case (final service?, final id?) when _casters.contains(id))
                   TextButton.icon(
                     key: Key('slots-$index'),
                     onPressed: () => _openSpellSlots(service, id),

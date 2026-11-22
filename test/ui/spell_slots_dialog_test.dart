@@ -215,21 +215,47 @@ void main() {
       expect(scene.encounter.isRunning, isTrue);
     });
 
-    testWidgets('Ein Charakter ohne Zauberplätze bekommt einen Hinweis', (
+    testWidgets('Ein Charakter ohne Zauberplätze hat im Kampf keinen Knopf', (
       tester,
     ) async {
       final scene = Scene();
       scene.encounter.addCharacter(await scene.borin());
+      scene.encounter.addCharacter(await scene.mira());
       await scene.pumpCombat(tester);
 
-      await tapKey(tester, 'slots-0');
+      expect(find.byKey(const Key('slots-0')), findsNothing);
+      expect(find.byKey(const Key('slots-1')), findsOneWidget);
+    });
 
-      expect(
-        find.text(
-          'Keine Zauberplätze eingetragen. Sie stehen im Charakterbogen.',
-        ),
-        findsOneWidget,
-      );
+    testWidgets('Trägt man im Charakterbogen aus dem Kampf Zauberplätze ein, '
+        'erscheint der Knopf', (tester) async {
+      final scene = Scene();
+      scene.encounter.addCharacter(await scene.borin());
+      await scene.pumpCombat(tester);
+      expect(find.byKey(const Key('slots-0')), findsNothing);
+
+      await tapKey(tester, 'edit-0');
+      final field = find.byKey(const Key('slots-1'));
+      await tester.ensureVisible(field);
+      await tester.enterText(field, '2');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'character-save');
+
+      expect(find.byKey(const Key('slots-0')), findsOneWidget);
+    });
+
+    testWidgets('Ändert man den Charakter außerhalb des Kampfs, passt sich '
+        'der Knopf beim nächsten Aufbau an', (tester) async {
+      final scene = Scene();
+      final borin = await scene.borin();
+      scene.encounter.addCharacter(borin);
+      await scene.pumpCombat(tester);
+      expect(find.byKey(const Key('slots-0')), findsNothing);
+
+      await scene.characters.save(borin.withValues(spellSlots: {1: 2}));
+      await scene.pumpCombat(tester);
+
+      expect(find.byKey(const Key('slots-0')), findsOneWidget);
     });
 
     testWidgets('Ohne Zauberplatz-Logik gibt es keinen Knopf', (tester) async {
