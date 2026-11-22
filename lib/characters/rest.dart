@@ -60,26 +60,35 @@ class RestService {
       character.hitDiceRemaining > 0 &&
       character.hp < character.maxHp;
 
-  /// Each of [characters] takes a short rest; logged per character. Hit
-  /// dice are spent afterwards with [spendHitDie].
+  /// Each of [characters] takes a short rest; logged per character. Pact
+  /// magic slots come back; hit dice are spent afterwards with
+  /// [spendHitDie].
   ///
   /// Throws a [StateError] while a combat runs.
   Future<void> shortRest(List<Character> characters) async {
     _checkNoCombat();
     for (final given in characters) {
       final character = await _current(given);
+      final blocker = blockerFor(character, RestKind.short);
+      final pactRegained = blocker == null ? character.pactSlotsUsed : 0;
+      if (pactRegained > 0) {
+        character.pactSlotsUsed = 0;
+        await _characters.save(character);
+      }
       await _log.add(
         _restEvent(
           character,
           RestKind.short,
-          blocker: blockerFor(character, RestKind.short),
+          blocker: blocker,
+          pactSlotsRegained: pactRegained,
         ),
       );
     }
   }
 
   /// Each of [characters] takes a long rest: full hit points, temporary hit
-  /// points end, spent hit dice come back by the rules. Characters the rest
+  /// points end, spent hit dice come back by the rules, all spell slots and
+  /// pact magic slots come back. Characters the rest
   /// does not help keep their state; the log says why.
   ///
   /// Throws a [StateError] while a combat runs.
@@ -92,8 +101,12 @@ class RestService {
         hp: character.hp,
         tempHp: character.tempHp,
         hitDice: character.hitDiceRemaining,
+        slotsUsed: character.slotsUsed.values.fold(0, (a, b) => a + b),
+        pactSlotsUsed: character.pactSlotsUsed,
       );
       if (blocker == null) {
+        character.slotsUsed.clear();
+        character.pactSlotsUsed = 0;
         final regained = _rules.hitDiceRegainedOnLongRest(
           character.hitDiceTotal,
         );
@@ -114,6 +127,8 @@ class RestService {
           hpBefore: before.hp,
           tempHpBefore: before.tempHp,
           hitDiceBefore: before.hitDice,
+          slotsRegained: blocker == null ? before.slotsUsed : 0,
+          pactSlotsRegained: blocker == null ? before.pactSlotsUsed : 0,
         ),
       );
     }
@@ -205,6 +220,8 @@ class RestService {
     int? hpBefore,
     int tempHpBefore = 0,
     int? hitDiceBefore,
+    int slotsRegained = 0,
+    int pactSlotsRegained = 0,
   }) => RestEvent(
     name: character.name,
     kind: kind,
@@ -217,5 +234,7 @@ class RestService {
     hitDiceBefore: hitDiceBefore ?? character.hitDiceRemaining,
     hitDiceAfter: character.hitDiceRemaining,
     hitDiceTotal: character.hitDiceTotal,
+    slotsRegained: slotsRegained,
+    pactSlotsRegained: pactSlotsRegained,
   );
 }

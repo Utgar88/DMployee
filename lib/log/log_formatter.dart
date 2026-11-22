@@ -73,6 +73,7 @@ class LogFormatter {
       ]),
       RestEvent() => _rest(event),
       HitDieEvent() => _hitDie(event),
+      SpellSlotEvent() => _spellSlot(event),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -243,10 +244,16 @@ class LogFormatter {
     final summary =
         'TP ${event.hpAfter}/${event.maxHp}, '
         'Trefferwürfel ${event.hitDiceAfter}/${event.hitDiceTotal}';
+    final slotLines = [
+      if (event.slotsRegained > 0)
+        'Zauberplätze zurück: ${event.slotsRegained}',
+      if (event.pactSlotsRegained > 0)
+        'Paktmagie zurück: ${event.pactSlotsRegained}',
+    ];
     if (short) {
       return LogLine([
         LogSpan('${event.name} macht eine kurze Rast: '),
-        LogSpan(summary, details: [rulesetLine]),
+        LogSpan(summary, details: [rulesetLine, ...slotLines]),
       ]);
     }
     return LogLine([
@@ -262,7 +269,23 @@ class LogFormatter {
               '${event.hitDiceAfter} von ${event.hitDiceTotal}',
           if (ruleset != null)
             'Zurück nach der langen Rast: ${ruleset.longRestHitDiceRule}',
+          ...slotLines,
         ],
+      ),
+    ]);
+  }
+
+  LogLine _spellSlot(SpellSlotEvent event) {
+    final slot =
+        '${event.pact ? 'Paktmagie-Platz' : 'Zauberplatz'} '
+        'des ${event.level}. Grades';
+    final verb = switch (event.change) {
+      SlotChange.used => 'verbraucht einen $slot',
+      SlotChange.restored => 'erhält einen $slot zurück',
+    };
+    return LogLine([
+      LogSpan(
+        '${event.name} $verb (${event.remaining} von ${event.total} übrig)',
       ),
     ]);
   }

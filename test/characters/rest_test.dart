@@ -438,4 +438,83 @@ void main() {
       expect((await scene.stored(aria)).hitDiceSpent, 1);
     });
   });
+
+  group('Zauberplätze bei Rasten', () {
+    Future<Character> caster(Scene scene, {int hp = 20}) async {
+      final mira =
+          Character(
+              name: 'Mira',
+              level: 5,
+              maxHp: 28,
+              armorClass: 12,
+              spellSlots: {1: 4, 3: 2},
+              pactSlots: 2,
+              pactSlotLevel: 3,
+              hp: hp,
+            )
+            ..slotsUsed[1] = 3
+            ..slotsUsed[3] = 2
+            ..pactSlotsUsed = 2;
+      return scene.characters.save(mira);
+    }
+
+    test('Die lange Rast füllt alle Zauberplätze und die Paktmagie auf; der '
+        'Log nennt die Anzahl', () async {
+      final scene = Scene();
+      final mira = await caster(scene);
+
+      await scene.rests.longRest([mira]);
+
+      final stored = await scene.stored(mira);
+      expect(stored.slotsRemaining(1), 4);
+      expect(stored.slotsRemaining(3), 2);
+      expect(stored.pactSlotsRemaining, 2);
+      final event = (await scene.events()).single as RestEvent;
+      expect(event.slotsRegained, 5);
+      expect(event.pactSlotsRegained, 2);
+    });
+
+    test('Die kurze Rast füllt nur die Paktmagie auf', () async {
+      final scene = Scene();
+      final mira = await caster(scene);
+
+      await scene.rests.shortRest([mira]);
+
+      final stored = await scene.stored(mira);
+      expect(stored.pactSlotsRemaining, 2);
+      expect(stored.slotsRemaining(1), 1);
+      expect(stored.slotsRemaining(3), 0);
+      final event = (await scene.events()).single as RestEvent;
+      expect(event.slotsRegained, 0);
+      expect(event.pactSlotsRegained, 2);
+    });
+
+    test('Ohne Nutzen von der Rast kommen keine Plätze zurück', () async {
+      final scene = Scene(ruleset: Ruleset.dnd2024);
+      final mira = await caster(scene, hp: 0);
+      await scene.characters.save(mira..isStable = true);
+
+      await scene.rests.shortRest([mira]);
+      await scene.rests.longRest([mira]);
+
+      final stored = await scene.stored(mira);
+      expect(stored.pactSlotsRemaining, 0);
+      expect(stored.slotsRemaining(1), 1);
+    });
+
+    test('Die kurze Rast mit Paktmagie überschreibt keine Trefferpunkte aus '
+        'dem Kampf', () async {
+      final scene = Scene();
+      final mira = await caster(scene);
+      final combatant = scene.encounter.addCharacter(mira);
+      await scene.encounter.damage(combatant, 5);
+
+      await scene.rests.shortRest([mira]);
+      await scene.encounter.flush();
+
+      final stored = await scene.stored(mira);
+      expect(stored.hp, 15);
+      expect(stored.pactSlotsRemaining, 2);
+    });
+  });
 }

@@ -5,6 +5,7 @@ import 'roll_record.dart';
 
 part 'combat_events.dart';
 part 'rest_events.dart';
+part 'spell_slot_events.dart';
 
 /// Something that happened and is kept in the log.
 ///
@@ -38,6 +39,7 @@ sealed class LogEvent {
       CombatantRevivedEvent.typeName => CombatantRevivedEvent.fromJson(json),
       RestEvent.typeName => RestEvent.fromJson(json),
       HitDieEvent.typeName => HitDieEvent.fromJson(json),
+      SpellSlotEvent.typeName => SpellSlotEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

@@ -402,11 +402,10 @@ void main() {
       final scene = Scene();
       final aria = await scene.characters.save(
         (await scene.saveAria()).withValues(
-            spellSlots: {1: 4, 3: 2},
-            pactSlots: 1,
-            pactSlotLevel: 2,
-          )
-          ..slotsUsed[1] = 2,
+          spellSlots: {1: 4, 3: 2},
+          pactSlots: 1,
+          pactSlotLevel: 2,
+        )..slotsUsed[1] = 2,
       );
       await scene.open(tester, aria);
 

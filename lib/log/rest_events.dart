@@ -28,6 +28,8 @@ class RestEvent extends LogEvent {
     required this.hitDiceTotal,
     this.tempHpBefore = 0,
     this.blocker,
+    this.slotsRegained = 0,
+    this.pactSlotsRegained = 0,
   });
 
   factory RestEvent.fromJson(Map<String, Object?> json) {
@@ -46,6 +48,8 @@ class RestEvent extends LogEvent {
         final String name => RestBlocker.values.asNameMap()[name],
         _ => null,
       },
+      slotsRegained: json['slotsRegained'] as int? ?? 0,
+      pactSlotsRegained: json['pactSlotsRegained'] as int? ?? 0,
     );
   }
 
@@ -71,6 +75,10 @@ class RestEvent extends LogEvent {
   /// Set if the character got nothing from the rest.
   final RestBlocker? blocker;
 
+  /// Used spell slots and pact magic slots that came back.
+  final int slotsRegained;
+  final int pactSlotsRegained;
+
   @override
   String get type => typeName;
 
@@ -87,6 +95,8 @@ class RestEvent extends LogEvent {
     'hitDiceTotal': hitDiceTotal,
     if (tempHpBefore != 0) 'tempHpBefore': tempHpBefore,
     'blocker': ?blocker?.name,
+    if (slotsRegained > 0) 'slotsRegained': slotsRegained,
+    if (pactSlotsRegained > 0) 'pactSlotsRegained': pactSlotsRegained,
   };
 }
 

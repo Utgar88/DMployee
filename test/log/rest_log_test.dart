@@ -201,4 +201,67 @@ void main() {
       }
     });
   });
+
+  group('Log: Zauberplätze bei Rasten', () {
+    test('Zurückgewonnene Zauberplätze und Paktmagie stehen in den Details '
+        'der Rast', () {
+      const event = RestEvent(
+        name: 'Mira',
+        kind: RestKind.long,
+        ruleset: '5e-2014',
+        hpBefore: 20,
+        hpAfter: 28,
+        maxHp: 28,
+        hitDiceBefore: 5,
+        hitDiceAfter: 5,
+        hitDiceTotal: 5,
+        slotsRegained: 5,
+        pactSlotsRegained: 2,
+      );
+
+      final details = formatter
+          .format(event)
+          .spans
+          .singleWhere((s) => s.hasDetails)
+          .details;
+
+      expect(details, contains('Zauberplätze zurück: 5'));
+      expect(details, contains('Paktmagie zurück: 2'));
+      final restored = LogEvent.fromJson(event.type, event.toJson());
+      expect(restored.toJson(), event.toJson());
+    });
+
+    test('Bei der kurzen Rast steht zurückgewonnene Paktmagie in den '
+        'Details; ohne Plätze fehlen die Zeilen', () {
+      const withPact = RestEvent(
+        name: 'Mira',
+        kind: RestKind.short,
+        ruleset: '5e-2014',
+        hpBefore: 20,
+        hpAfter: 20,
+        maxHp: 28,
+        hitDiceBefore: 5,
+        hitDiceAfter: 5,
+        hitDiceTotal: 5,
+        pactSlotsRegained: 2,
+      );
+
+      expect(
+        formatter
+            .format(withPact)
+            .spans
+            .singleWhere((s) => s.hasDetails)
+            .details,
+        ['Regelwerk: D&D 5e (2014)', 'Paktmagie zurück: 2'],
+      );
+      expect(
+        formatter
+            .format(shortRest)
+            .spans
+            .singleWhere((s) => s.hasDetails)
+            .details,
+        ['Regelwerk: D&D 5e (2024)'],
+      );
+    });
+  });
 }
