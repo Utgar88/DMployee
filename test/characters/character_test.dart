@@ -488,4 +488,29 @@ void main() {
       expect(restored.pactSlotsRemaining, 0);
     });
   });
+
+  group('Charakter: Erschöpfung', () {
+    test('Ein neuer Charakter ist nicht erschöpft', () {
+      expect(Character(name: 'Aria', maxHp: 30, armorClass: 15).exhaustion, 0);
+    });
+
+    test('Die Erschöpfung wird gespeichert und bleibt beim Ändern des '
+        'Bogens', () {
+      final aria = Character(name: 'Aria', maxHp: 30, armorClass: 15)
+        ..exhaustion = 3;
+
+      expect(Character.fromJson(aria.toJson()).exhaustion, 3);
+      expect(aria.withValues(armorClass: 16).exhaustion, 3);
+    });
+
+    test('Ein früher gespeicherter Charakter ohne Angabe ist nicht '
+        'erschöpft; Werte außerhalb 0 bis 6 werden begrenzt', () {
+      final json = Character(name: 'Aria', maxHp: 30, armorClass: 15).toJson()
+        ..remove('exhaustion');
+      expect(Character.fromJson(json).exhaustion, 0);
+
+      expect(Character.fromJson({...json, 'exhaustion': 9}).exhaustion, 6);
+      expect(Character.fromJson({...json, 'exhaustion': -1}).exhaustion, 0);
+    });
+  });
 }

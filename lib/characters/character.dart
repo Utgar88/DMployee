@@ -1,4 +1,5 @@
 import '../combat/attack.dart';
+import '../rules/exhaustion_rules.dart';
 import 'ability.dart';
 
 /// A player character as the game master keeps it between sessions: fixed
@@ -123,7 +124,8 @@ class Character {
       ..deathSaveSuccesses = json['deathSaveSuccesses'] as int? ?? 0
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
       ..isStable = json['isStable'] as bool? ?? false
-      ..isDead = json['isDead'] as bool? ?? false;
+      ..isDead = json['isDead'] as bool? ?? false
+      ..exhaustion = (json['exhaustion'] as int? ?? 0).clamp(0, maxExhaustion);
   }
 
   /// Set by the repository when the character is first saved.
@@ -196,6 +198,10 @@ class Character {
   bool isStable = false;
   bool isDead = false;
 
+  /// Exhaustion level, 0 to [maxExhaustion]. Its effects depend on the
+  /// ruleset (see `ExhaustionRules`).
+  int exhaustion = 0;
+
   int score(Ability ability) => abilityScores[ability]!;
 
   int modifier(Ability ability) => abilityModifier(score(ability));
@@ -262,7 +268,8 @@ class Character {
       ..deathSaveSuccesses = deathSaveSuccesses
       ..deathSaveFailures = deathSaveFailures
       ..isStable = isStable
-      ..isDead = isDead;
+      ..isDead = isDead
+      ..exhaustion = exhaustion;
   }
 
   Map<String, Object?> toJson() => {
@@ -303,6 +310,7 @@ class Character {
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+    if (exhaustion > 0) 'exhaustion': exhaustion,
   };
 
   /// Takes over the used slots of [other], but never more than this

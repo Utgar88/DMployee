@@ -38,6 +38,7 @@ class Combatant {
       ..deathSaveFailures = json['deathSaveFailures'] as int? ?? 0
       ..isStable = json['isStable'] as bool? ?? false
       ..isDead = json['isDead'] as bool? ?? false
+      ..exhaustion = json['exhaustion'] as int? ?? 0
       ..buffs.addAll([
         for (final buff in json['buffs'] as List? ?? const [])
           Buff.fromJson((buff as Map).cast<String, Object?>()),
@@ -85,6 +86,10 @@ class Combatant {
   /// At 0 hit points but no longer dying; ends when damage is taken.
   bool isStable = false;
   bool isDead = false;
+
+  /// Exhaustion level, 0 to 6. Change it through `Encounter.setExhaustion`;
+  /// its effects depend on the ruleset (see `ExhaustionRules`).
+  int exhaustion = 0;
 
   /// Resistance, vulnerability or immunity per damage type, e.g.
   /// `{'Feuer': DamageEffect.resistance}`. Change it through
@@ -144,6 +149,7 @@ class Combatant {
     'deathSaveFailures': deathSaveFailures,
     'isStable': isStable,
     'isDead': isDead,
+    'exhaustion': exhaustion,
     'buffs': [for (final buff in buffs) buff.toJson()],
     'conditions': [for (final condition in conditions) condition.toJson()],
     'damageTraits': {

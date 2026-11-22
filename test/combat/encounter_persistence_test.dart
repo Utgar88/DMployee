@@ -107,6 +107,20 @@ void main() {
     });
   });
 
+  group('Kampfstand speichern: Erschöpfung', () {
+    test('Die Erschöpfung eines Kämpfers bleibt nach dem Neustart '
+        'erhalten', () async {
+      final scene = Scene([]);
+      scene.goblin.exhaustion = 2;
+      await scene.encounter.damage(scene.goblin, 1);
+
+      final restored = await scene.reopen();
+
+      expect(restored.combatants.last.exhaustion, 2);
+      expect(restored.combatants.first.exhaustion, 0);
+    });
+  });
+
   group('Kampfstand speichern: Trefferpunkte', () {
     test('Direkt eingetragener Schaden bleibt nach dem Neustart '
         'erhalten', () async {

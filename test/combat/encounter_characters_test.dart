@@ -96,6 +96,14 @@ void main() {
       expect(combatant.isDying, isTrue);
     });
 
+    test('Die Erschöpfung des Charakters kommt mit', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria()
+        ..exhaustion = 2;
+
+      expect(scene.encounter.addCharacter(aria).exhaustion, 2);
+    });
+
     test('Ein Charakter kann nur einmal im Kampf sein', () async {
       final scene = Scene();
       final aria = await scene.saveAria();
@@ -175,6 +183,17 @@ void main() {
       await scene.encounter.flush();
       stored = await scene.stored(aria);
       expect(stored.isDead, isTrue);
+    });
+
+    test('Die Erschöpfung aus dem Kampf landet beim Charakter', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria();
+      final combatant = scene.encounter.addCharacter(aria)..exhaustion = 2;
+
+      await scene.encounter.damage(combatant, 1);
+      await scene.encounter.flush();
+
+      expect((await scene.stored(aria)).exhaustion, 2);
     });
 
     test('Nach dem Entfernen aus dem Kampf behält der Charakter seinen '
@@ -343,6 +362,19 @@ void main() {
       expect(combatant.tempHp, 0);
       expect(combatant.isDown, isFalse);
       expect(await scene.log.entries(), hasLength(logBefore));
+    });
+
+    test('Der Kämpfer übernimmt auch die Erschöpfung', () async {
+      final scene = Scene();
+      final aria = await scene.saveAria()
+        ..exhaustion = 3;
+      final combatant = scene.encounter.addCharacter(aria);
+
+      scene.encounter.takeCharacterState(
+        (await scene.stored(aria))..exhaustion = 2,
+      );
+
+      expect(combatant.exhaustion, 2);
     });
 
     test('Das Übernehmen behält die übrigen Werte des gespeicherten '

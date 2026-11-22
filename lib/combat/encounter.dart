@@ -160,7 +160,8 @@ class Encounter {
           ..deathSaveSuccesses = character.deathSaveSuccesses
           ..deathSaveFailures = character.deathSaveFailures
           ..isStable = character.isStable
-          ..isDead = character.isDead;
+          ..isDead = character.isDead
+          ..exhaustion = character.exhaustion;
     _combatants.add(combatant);
     unawaited(_save());
     return combatant;
@@ -192,9 +193,9 @@ class Encounter {
   }
 
   /// Takes over the current state of [character] (hit points, temporary
-  /// hit points, death saving throws, stable, dead) for its combatant, e.g.
-  /// after a rest. A correction, not an event: nothing is logged. Does
-  /// nothing if the character is not in the encounter.
+  /// hit points, death saving throws, stable, dead, exhaustion) for its
+  /// combatant, e.g. after a rest. A correction, not an event: nothing is
+  /// logged. Does nothing if the character is not in the encounter.
   void takeCharacterState(Character character) {
     final combatant = _combatants
         .where((c) => c.characterId != null && c.characterId == character.id)
@@ -206,7 +207,8 @@ class Encounter {
       ..deathSaveSuccesses = character.deathSaveSuccesses
       ..deathSaveFailures = character.deathSaveFailures
       ..isStable = character.isStable
-      ..isDead = character.isDead;
+      ..isDead = character.isDead
+      ..exhaustion = character.exhaustion;
     unawaited(_save());
   }
 
@@ -516,7 +518,8 @@ class Encounter {
           ..deathSaveSuccesses = combatant['deathSaveSuccesses']! as int
           ..deathSaveFailures = combatant['deathSaveFailures']! as int
           ..isStable = combatant['isStable']! as bool
-          ..isDead = combatant['isDead']! as bool;
+          ..isDead = combatant['isDead']! as bool
+          ..exhaustion = combatant['exhaustion']! as int;
         await characters.save(character);
       }
     });
