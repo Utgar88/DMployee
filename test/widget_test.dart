@@ -150,5 +150,23 @@ void main() {
 
       expect(find.text('Regeln: D&D 5e (2024)'), findsOneWidget);
     });
+
+    testWidgets('In der Charakterliste aus dem Menü lässt sich rasten', (
+      tester,
+    ) async {
+      final characters = InMemoryCharacterRepository();
+      await characters.save(
+        Character(name: 'Borin', maxHp: 24, armorClass: 18, hp: 5),
+      );
+      await tester.pumpWidget(
+        DMployeeApp(log: InMemoryLogRepository(), characters: characters),
+      );
+
+      await openCharacters(tester);
+      await tester.tap(find.byKey(const Key('rest')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rast'), findsOneWidget);
+    });
   });
 }

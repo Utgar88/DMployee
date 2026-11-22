@@ -37,6 +37,9 @@ class RestService {
 
   Ruleset get _rules => _settings.ruleset;
 
+  /// The ruleset rests follow right now.
+  Ruleset get ruleset => _rules;
+
   /// Why [character] would get nothing from a rest of [kind] under the
   /// current rules; null if it can rest.
   RestBlocker? blockerFor(Character character, RestKind kind) {

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../characters/character_repository.dart';
+import '../characters/rest.dart';
 import '../combat/encounter.dart';
 import '../log/log_repository.dart';
 import '../settings/app_settings.dart';
@@ -51,6 +52,13 @@ class _HomeScreenState extends State<HomeScreen> {
   late final _encounter =
       widget.encounter ?? Encounter(log: widget.log, characters: _characters);
 
+  late final _rests = RestService(
+    characters: _characters,
+    log: widget.log,
+    settings: _settings,
+    encounter: _encounter,
+  );
+
   int _index = 0;
 
   /// Counts openings of the log tab so it reloads its entries each time.
@@ -63,8 +71,11 @@ class _HomeScreenState extends State<HomeScreen> {
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            CharactersScreen(characters: _characters, encounter: _encounter),
+        builder: (_) => CharactersScreen(
+          characters: _characters,
+          encounter: _encounter,
+          rests: _rests,
+        ),
       ),
     );
     // Characters may have joined the combat meanwhile.

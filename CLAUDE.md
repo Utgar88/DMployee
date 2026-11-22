@@ -56,7 +56,8 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Modell in `lib/characters/` (`Character`, `Ability`). Abgeleitete Werte (Modifikatoren, Übungsbonus, Initiative, Rettungswürfe) werden berechnet, nie gespeichert.
 - Ein Charakter im Kampf ist mit seinem Kämpfer verknüpft (`Combatant.characterId`). Den Zustand (TP, temporäre TP, Todesrettungswürfe, stabil, tot) schreibt `Encounter._save` zurück; neue Zustandsfelder dort und in `addCharacter` ergänzen.
 - Bogenwerte (Name, RK, maximale TP, Angriffe usw.) ändern sich nur über den Charakterbogen; danach `Encounter.applyCharacter` aufrufen. Beim Löschen `Encounter.forgetCharacter`.
-- Klasse bleibt Freitext, bis das Regelwerk (2014 oder 2024) feststeht. Erschöpfung ist bis zum wählbaren Regelwerk zurückgestellt.
+- Klasse bleibt Freitext, bis das Compendium die Klassen liefert; der Trefferwürfel (W6 bis W12) wird deshalb auf dem Bogen gewählt. Erschöpfung ist noch offen und kann jetzt je Regelwerk umgesetzt werden.
+- Rasten laufen über `RestService` (`lib/characters/rest.dart`), die Regeln je Regelwerk stehen in `lib/rules/rest_rules.dart` (Quellen: SRD 5.1 "Resting", SRD 5.2 Glossar "Short Rest"/"Long Rest"). Keine Rast während eines laufenden Kampfs. Ist der Charakter noch auf der Kampfliste, übernimmt `Encounter.takeCharacterState` den neuen Zustand (kein Log-Eintrag). Was künftig bei einer Rast zurückkommt (Zauberplätze, Fähigkeiten), wird in `RestService.shortRest`/`longRest` eingehängt.
 
 ## Regelwerk
 

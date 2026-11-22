@@ -2,8 +2,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../characters/character.dart';
 import '../characters/character_repository.dart';
+import '../characters/rest.dart';
 import '../combat/encounter.dart';
+import '../log/log_event.dart';
 import 'character_edit_screen.dart';
+import 'rest_screens.dart';
 
 /// All stored player characters: open their sheet, create new ones and send
 /// them into the combat.
@@ -12,10 +15,14 @@ class CharactersScreen extends StatefulWidget {
     super.key,
     required this.characters,
     required this.encounter,
+    this.rests,
   });
 
   final CharacterRepository characters;
   final Encounter encounter;
+
+  /// Short and long rests; without it there is no button for resting.
+  final RestService? rests;
 
   @override
   State<CharactersScreen> createState() => _CharactersScreenState();
@@ -58,11 +65,60 @@ class _CharactersScreenState extends State<CharactersScreen> {
     );
   }
 
+  Future<void> _rest(RestService rests, List<Character> list) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (widget.encounter.isRunning) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Während eines Kampfs ist keine Rast möglich.'),
+        ),
+      );
+      return;
+    }
+    final choice = await showDialog<RestChoice>(
+      context: context,
+      builder: (_) => RestDialog(characters: list, rests: rests),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice.kind) {
+      case RestKind.long:
+        await rests.longRest(choice.characters);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Lange Rast beendet.')),
+        );
+      case RestKind.short:
+        await rests.shortRest(choice.characters);
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ShortRestScreen(characters: choice.characters, rests: rests),
+          ),
+        );
+    }
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _list;
+    final rests = widget.rests;
     return Scaffold(
-      appBar: AppBar(title: const Text('Charaktere')),
+      appBar: AppBar(
+        title: const Text('Charaktere'),
+        actions: [
+          if (rests != null)
+            IconButton(
+              key: const Key('rest'),
+              tooltip: 'Rasten',
+              onPressed: list == null || list.isEmpty
+                  ? null
+                  : () => _rest(rests, list),
+              icon: const Icon(Icons.bedtime_outlined),
+            ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         key: const Key('new-character'),
         onPressed: _open,
@@ -128,6 +184,12 @@ class _CharactersScreenState extends State<CharactersScreen> {
                           ),
                         ],
                       ],
+                    ),
+                    Text(
+                      'Trefferwürfel ${character.hitDiceRemaining}/'
+                      '${character.hitDiceTotal} (W${character.hitDie})',
+                      key: Key('character-hit-dice-$index'),
+                      style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),
