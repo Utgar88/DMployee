@@ -51,7 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// The running encounter. Kept here so it survives switching tabs.
   late final _encounter =
-      widget.encounter ?? Encounter(log: widget.log, characters: _characters);
+      widget.encounter ??
+      Encounter(log: widget.log, characters: _characters, settings: _settings);
 
   late final _rests = RestService(
     characters: _characters,

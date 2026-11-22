@@ -35,12 +35,13 @@ Future<AppData> _openStorage() async {
   );
   final log = SqliteLogRepository(database);
   final characters = SqliteCharacterRepository(database);
+  final settings = await AppSettings.load(SqliteSettingsRepository(database));
   final encounter = await Encounter.load(
     log: log,
     store: SqliteEncounterStore(database),
     characters: characters,
+    settings: settings,
   );
-  final settings = await AppSettings.load(SqliteSettingsRepository(database));
   return (
     log: log,
     characters: characters,

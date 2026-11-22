@@ -8,6 +8,9 @@ import '../dice/modifier.dart';
 import '../log/log_event.dart';
 import '../log/log_repository.dart';
 import '../log/roll_record.dart';
+import '../rules/exhaustion_rules.dart';
+import '../rules/ruleset.dart';
+import '../settings/app_settings.dart';
 import 'attack.dart';
 import 'buff.dart';
 import 'combatant.dart';
@@ -59,12 +62,16 @@ class AttackOutcome {
 /// Combatants added with [addCharacter] stand for stored characters: with a
 /// [CharacterRepository], every change writes their hit points, temporary
 /// hit points and death saving throws back to the character.
+///
+/// Rules that differ between the rule books (e.g. exhaustion) follow the
+/// ruleset set in [AppSettings]; without settings the standard applies.
 class Encounter {
   Encounter({
     required this._log,
     DiceRoller? roller,
     this._store,
     this._characters,
+    this._settings,
   }) : _roller = roller ?? DiceRoller();
 
   /// The combat as it was last saved in [store]. Starts empty if nothing
@@ -73,12 +80,14 @@ class Encounter {
     required LogRepository log,
     required EncounterStore store,
     CharacterRepository? characters,
+    AppSettings? settings,
     DiceRoller? roller,
   }) async {
     final encounter = Encounter(
       log: log,
       store: store,
       characters: characters,
+      settings: settings,
       roller: roller,
     );
     final state = await store.load();
@@ -90,6 +99,15 @@ class Encounter {
   final DiceRoller _roller;
   final EncounterStore? _store;
   final CharacterRepository? _characters;
+  final AppSettings? _settings;
+
+  /// The ruleset the combat follows right now.
+  Ruleset get ruleset => _settings?.ruleset ?? Ruleset.standard;
+
+  /// The hit point maximum of [combatant] right now: its [Combatant.maxHp],
+  /// halved by exhaustion under the 2014 rules.
+  int maxHpOf(Combatant combatant) =>
+      ruleset.maxHpWithExhaustion(combatant.maxHp, combatant.exhaustion);
 
   /// The most recent save; later saves are queued behind it.
   Future<void> _lastSave = Future.value();
@@ -225,6 +243,47 @@ class Encounter {
     _combatants.remove(combatant);
     if (_current == combatant) _current = null;
     unawaited(_save());
+  }
+
+  /// Sets the exhaustion level of [combatant] to [level] and logs it. At
+  /// the highest level the combatant dies; lowering it again does not bring
+  /// it back (see [revive]). Under the 2014 rules, hit points above the
+  /// halved maximum drop to it.
+  ///
+  /// Returns null and logs nothing if [level] is the current one. A
+  /// [level] outside 0 to [maxExhaustion] throws an [ArgumentError] and
+  /// changes nothing.
+  Future<ExhaustionEvent?> setExhaustion(Combatant combatant, int level) async {
+    if (level < 0 || level > maxExhaustion) {
+      throw ArgumentError.value(level, 'level', 'must be 0 to $maxExhaustion');
+    }
+    final before = combatant.exhaustion;
+    if (level == before) return null;
+    combatant.exhaustion = level;
+    final maxHp = maxHpOf(combatant);
+    if (combatant.hp > maxHp) combatant.hp = maxHp;
+    final dies = ruleset.exhaustionKills(level) && !combatant.isDead;
+    if (dies) {
+      combatant
+        ..isDead = true
+        ..isStable = false
+        ..hp = 0
+        ..tempHp = 0
+        ..deathSaveSuccesses = 0
+        ..deathSaveFailures = 0;
+    }
+    final event = ExhaustionEvent(
+      name: combatant.name,
+      before: before,
+      after: level,
+      ruleset: ruleset.id,
+    );
+    await _log.add(event);
+    if (dies) {
+      await _log.add(CombatantDiedEvent(combatant.name, exhaustion: true));
+    }
+    await _save();
+    return event;
   }
 
   /// Stores a further [attack] on [combatant].
@@ -566,15 +625,24 @@ class Encounter {
   /// other combatants. Ties go to the higher initiative bonus.
   Future<void> rollInitiative({Map<Combatant, int> manual = const {}}) async {
     final rolls = <Combatant, RollRecord>{};
+    final disadvantaged = <Combatant>{};
     for (final combatant in _combatants) {
+      // Initiative is a dexterity check.
+      final level = combatant.exhaustion;
+      final disadvantage = ruleset.exhaustionDisadvantageOnChecks(level);
+      if (disadvantage) disadvantaged.add(combatant);
+      final mode = disadvantage ? RollMode.disadvantage : RollMode.normal;
       final modifiers = [
         if (combatant.initiativeBonus != 0)
           Modifier('Initiative', combatant.initiativeBonus),
+        ?_exhaustionModifier(combatant),
       ];
       final typedIn = manual[combatant];
       rolls[combatant] = typedIn != null
-          ? RollRecord.manualD20(typedIn, modifiers: modifiers)
-          : RollRecord.fromD20(_roller.rollD20(modifiers: modifiers));
+          ? RollRecord.manualD20(typedIn, mode: mode, modifiers: modifiers)
+          : RollRecord.fromD20(
+              _roller.rollD20(mode: mode, modifiers: modifiers),
+            );
     }
 
     for (final combatant in _combatants) {
@@ -599,7 +667,13 @@ class Encounter {
     await _log.add(
       InitiativeEvent([
         for (final combatant in _combatants)
-          InitiativeEntry(name: combatant.name, roll: rolls[combatant]!),
+          InitiativeEntry(
+            name: combatant.name,
+            roll: rolls[combatant]!,
+            disadvantageFromExhaustion: disadvantaged.contains(combatant)
+                ? combatant.exhaustion
+                : null,
+          ),
       ]),
     );
     await _log.add(RoundEvent(_round));
@@ -695,6 +769,9 @@ class Encounter {
     final conditionEffects = applyConditions
         ? _conditionEffects(attacker, target)
         : const <ConditionEffect>[];
+    final exhaustionPenalty = applyConditions
+        ? _exhaustionModifier(attacker)
+        : null;
     final hasAdvantage =
         mode == RollMode.advantage || conditionEffects.any((e) => e.advantage);
     final hasDisadvantage =
@@ -709,6 +786,7 @@ class Encounter {
       for (final buff in buffs)
         if (buff.attackBonus case final bonus?)
           _buffModifier(buff.name, bonus, manualBuffRolls[buff]),
+      ?exhaustionPenalty,
     ];
     final armorClassModifiers = [
       for (final buff in target.buffs)
@@ -877,10 +955,9 @@ class Encounter {
     final tempHpBefore = target.tempHp;
     var consequences = const <LogEvent>[];
     if (healing) {
+      final maxHp = maxHpOf(target);
       target
-        ..hp = hpBefore + amount > target.maxHp
-            ? target.maxHp
-            : hpBefore + amount
+        ..hp = hpBefore + amount > maxHp ? maxHp : hpBefore + amount
         ..isStable = false
         ..deathSaveSuccesses = 0
         ..deathSaveFailures = 0;
@@ -895,7 +972,7 @@ class Encounter {
       healing: healing,
       hpBefore: hpBefore,
       hpAfter: target.hp,
-      maxHp: target.maxHp,
+      maxHp: maxHpOf(target),
       source: trimmed == null || trimmed.isEmpty ? null : trimmed,
       damageType: healing ? null : knownType,
       damageEffect: damageEffect,
@@ -940,7 +1017,7 @@ class Encounter {
       return [if (hpBefore > 0) CombatantDownEvent(target.name)];
     }
 
-    if (damage - hpBefore >= target.maxHp) {
+    if (damage - hpBefore >= maxHpOf(target)) {
       target
         ..isDead = true
         ..isStable = false;
@@ -967,8 +1044,9 @@ class Encounter {
   /// spells like Wiederbeleben or Tote erwecken, the maximum for
   /// Auferstehung. Death saving throws start over.
   ///
-  /// A [combatant] who is not dead throws a [StateError], [hp] below 1 or
-  /// above the maximum an [ArgumentError]; both change nothing.
+  /// A [combatant] who is not dead or still at the highest exhaustion level
+  /// throws a [StateError], [hp] below 1 or above the maximum (see
+  /// [maxHpOf]) an [ArgumentError]; both change nothing.
   Future<CombatantRevivedEvent> revive(
     Combatant combatant, {
     int hp = 1,
@@ -977,8 +1055,12 @@ class Encounter {
     if (!combatant.isDead) {
       throw StateError('${combatant.name} is not dead');
     }
-    if (hp < 1 || hp > combatant.maxHp) {
-      throw ArgumentError.value(hp, 'hp', 'must be 1 to ${combatant.maxHp}');
+    if (ruleset.exhaustionKills(combatant.exhaustion)) {
+      throw StateError('${combatant.name} is still at the highest exhaustion');
+    }
+    final maxHp = maxHpOf(combatant);
+    if (hp < 1 || hp > maxHp) {
+      throw ArgumentError.value(hp, 'hp', 'must be 1 to $maxHp');
     }
     combatant
       ..isDead = false
@@ -1028,10 +1110,15 @@ class Encounter {
       for (final buff in combatant.buffs)
         if (buff.saveBonus case final bonus?)
           _buffModifier(buff.name, bonus, manualBuffRolls[buff]),
+      ?_exhaustionModifier(combatant),
     ];
+    final disadvantage = ruleset.exhaustionDisadvantageOnAttacksAndSaves(
+      combatant.exhaustion,
+    );
+    final mode = disadvantage ? RollMode.disadvantage : RollMode.normal;
     final roll = manualRoll != null
-        ? RollRecord.manualD20(manualRoll, modifiers: modifiers)
-        : RollRecord.fromD20(_roller.rollD20(modifiers: modifiers));
+        ? RollRecord.manualD20(manualRoll, mode: mode, modifiers: modifiers)
+        : RollRecord.fromD20(_roller.rollD20(mode: mode, modifiers: modifiers));
 
     LogEvent? consequence;
     if (roll.isNatural20) {
@@ -1050,6 +1137,7 @@ class Encounter {
       roll: roll,
       successes: combatant.deathSaveSuccesses,
       failures: combatant.deathSaveFailures,
+      disadvantageFromExhaustion: disadvantage ? combatant.exhaustion : null,
     );
 
     if (_diesFromFailures(combatant)) {
@@ -1097,8 +1185,16 @@ class Encounter {
     return Modifier('$name ($dice von Hand)', bonus.signed(manual));
   }
 
+  /// The penalty of [combatant]'s exhaustion on d20 tests (2024 rules);
+  /// null if there is none.
+  Modifier? _exhaustionModifier(Combatant combatant) {
+    final penalty = ruleset.exhaustionD20Penalty(combatant.exhaustion);
+    return penalty == 0 ? null : Modifier('Erschöpfung', penalty);
+  }
+
   /// Conditions that give advantage or disadvantage when [attacker]
-  /// attacks [target]: the attacker's first, then the target's.
+  /// attacks [target]: the attacker's first, then the target's, including
+  /// exhaustion.
   List<ConditionEffect> _conditionEffects(
     Combatant attacker,
     Combatant target,
@@ -1111,6 +1207,12 @@ class Encounter {
             condition: active.condition.name,
             advantage: effect == RollMode.advantage,
           ),
+      if (ruleset.exhaustionDisadvantageOnAttacksAndSaves(attacker.exhaustion))
+        const ConditionEffect(
+          onAttacker: true,
+          condition: exhaustionCondition,
+          advantage: false,
+        ),
       for (final active in target.conditions)
         if (active.condition.targetEffect case final effect?)
           ConditionEffect(
