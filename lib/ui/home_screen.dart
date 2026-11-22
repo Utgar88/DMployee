@@ -3,20 +3,23 @@ import 'package:material_ui/material_ui.dart';
 import '../characters/character_repository.dart';
 import '../combat/encounter.dart';
 import '../log/log_repository.dart';
+import '../settings/app_settings.dart';
 import 'characters_screen.dart';
 import 'combat_screen.dart';
 import 'dice_screen.dart';
 import 'log_screen.dart';
+import 'settings_screen.dart';
 
 /// Root screen. The bottom bar switches between what is needed all the
 /// time during play (Würfler, Kampf, Log); the menu on the left opens the
-/// areas for preparation (Charaktere, later Compendium and settings).
+/// areas for preparation (Charaktere, Einstellungen, later Compendium).
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.log,
     this.characters,
     this.encounter,
+    this.settings,
   });
 
   final LogRepository log;
@@ -26,6 +29,9 @@ class HomeScreen extends StatefulWidget {
 
   /// The combat loaded at app start; a new empty one if omitted.
   final Encounter? encounter;
+
+  /// The app settings; defaults kept in memory if omitted.
+  final AppSettings? settings;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,6 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   late final CharacterRepository _characters =
       widget.characters ?? InMemoryCharacterRepository();
+
+  late final AppSettings _settings = widget.settings ?? AppSettings();
 
   /// The running encounter. Kept here so it survives switching tabs.
   late final _encounter =
@@ -63,22 +71,48 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _openSettings() async {
+    Navigator.pop(context);
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => SettingsScreen(settings: _settings)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffold,
       drawer: NavigationDrawer(
-        onDestinationSelected: (_) => _openCharacters(),
+        onDestinationSelected: (index) =>
+            index == 0 ? _openCharacters() : _openSettings(),
         selectedIndex: null,
-        children: const [
+        children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
-            child: Text('DMployee'),
+            padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
+            child: ListenableBuilder(
+              listenable: _settings,
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('DMployee'),
+                  Text(
+                    'Regeln: ${_settings.ruleset.label}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
           ),
-          NavigationDrawerDestination(
+          const NavigationDrawerDestination(
             key: Key('drawer-characters'),
             icon: Icon(Icons.people_outline),
             label: Text('Charaktere'),
+          ),
+          const NavigationDrawerDestination(
+            key: Key('drawer-settings'),
+            icon: Icon(Icons.settings_outlined),
+            label: Text('Einstellungen'),
           ),
         ],
       ),

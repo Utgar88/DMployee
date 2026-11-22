@@ -3,10 +3,14 @@ import 'package:dmployee/characters/character_repository.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/log/log_repository.dart';
 import 'package:dmployee/main.dart';
+import 'package:dmployee/rules/ruleset.dart';
+import 'package:dmployee/settings/app_settings.dart';
+import 'package:dmployee/settings/settings_repository.dart';
 import 'package:dmployee/ui/characters_screen.dart';
 import 'package:dmployee/ui/combat_screen.dart';
 import 'package:dmployee/ui/dice_screen.dart';
 import 'package:dmployee/ui/log_screen.dart';
+import 'package:dmployee/ui/settings_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -105,6 +109,46 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Borin'), findsOneWidget);
+    });
+
+    testWidgets('Über das Menü öffnen sich die Einstellungen; dort gewählte '
+        'Regeln gelten für die ganze App', (tester) async {
+      final settings = await AppSettings.load(InMemorySettingsRepository());
+      await tester.pumpWidget(
+        DMployeeApp(log: InMemoryLogRepository(), settings: settings),
+      );
+
+      await tester.tap(find.byKey(const Key('open-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('drawer-settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('ruleset-5e-2024')));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DiceScreen), findsOneWidget);
+      expect(settings.ruleset, Ruleset.dnd2024);
+    });
+
+    testWidgets('Das Menü zeigt, welches Regelwerk gerade gilt', (
+      tester,
+    ) async {
+      final repository = InMemorySettingsRepository();
+      await repository.write('ruleset', '5e-2024');
+      await tester.pumpWidget(
+        DMployeeApp(
+          log: InMemoryLogRepository(),
+          settings: await AppSettings.load(repository),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('open-menu')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Regeln: D&D 5e (2024)'), findsOneWidget);
     });
   });
 }

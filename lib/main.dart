@@ -8,6 +8,8 @@ import 'combat/encounter.dart';
 import 'combat/sqlite_encounter_store.dart';
 import 'log/log_repository.dart';
 import 'log/sqlite_log_repository.dart';
+import 'settings/app_settings.dart';
+import 'settings/sqlite_settings_repository.dart';
 import 'storage/app_database.dart';
 import 'ui/home_screen.dart';
 import 'ui/startup_screen.dart';
@@ -17,6 +19,7 @@ typedef AppData = ({
   LogRepository log,
   CharacterRepository characters,
   Encounter encounter,
+  AppSettings settings,
 });
 
 void main() {
@@ -24,7 +27,8 @@ void main() {
   runApp(const DMployeeApp.starting(load: _openStorage));
 }
 
-/// Opens the database and restores the combat of the last run.
+/// Opens the database, restores the combat of the last run and loads the
+/// settings.
 Future<AppData> _openStorage() async {
   final database = await openAppDatabase(
     path: p.join(await getDatabasesPath(), 'dmployee.db'),
@@ -36,7 +40,13 @@ Future<AppData> _openStorage() async {
     store: SqliteEncounterStore(database),
     characters: characters,
   );
-  return (log: log, characters: characters, encounter: encounter);
+  final settings = await AppSettings.load(SqliteSettingsRepository(database));
+  return (
+    log: log,
+    characters: characters,
+    encounter: encounter,
+    settings: settings,
+  );
 }
 
 class DMployeeApp extends StatelessWidget {
@@ -47,6 +57,7 @@ class DMployeeApp extends StatelessWidget {
     required LogRepository this.log,
     this.characters,
     this.encounter,
+    this.settings,
   }) : load = null,
        minimumSplash = Duration.zero;
 
@@ -58,7 +69,8 @@ class DMployeeApp extends StatelessWidget {
     this.minimumSplash = const Duration(milliseconds: 1500),
   }) : log = null,
        characters = null,
-       encounter = null;
+       encounter = null,
+       settings = null;
 
   final LogRepository? log;
 
@@ -67,6 +79,9 @@ class DMployeeApp extends StatelessWidget {
 
   /// The combat restored from the last run, if any.
   final Encounter? encounter;
+
+  /// The app settings; defaults kept in memory if omitted.
+  final AppSettings? settings;
   final Future<AppData> Function()? load;
   final Duration minimumSplash;
 
@@ -84,7 +99,12 @@ class DMployeeApp extends StatelessWidget {
         ),
       ),
       home: load == null
-          ? HomeScreen(log: log!, characters: characters, encounter: encounter)
+          ? HomeScreen(
+              log: log!,
+              characters: characters,
+              encounter: encounter,
+              settings: settings,
+            )
           : StartupScreen<AppData>(
               load: load!,
               minimumDuration: minimumSplash,
@@ -92,6 +112,7 @@ class DMployeeApp extends StatelessWidget {
                 log: data.log,
                 characters: data.characters,
                 encounter: data.encounter,
+                settings: data.settings,
               ),
             ),
     );

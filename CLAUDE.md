@@ -43,7 +43,7 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 ## Kampf-Engine
 
 - Regeln liegen in `lib/combat/encounter.dart` (`Encounter`), nicht im Bildschirm. `Encounter` schreibt selbst in den Log.
-- Es gelten die 5e-Standardregeln. Sonderregeln und ein wählbares Regelset kommen später; keine Hausregeln einbauen.
+- Es gelten die 5e-Standardregeln des eingestellten Regelwerks (siehe "Regelwerk"). Sonderregeln kommen später; keine Hausregeln einbauen.
 - Jeder Wurf muss auch von Hand eintragbar sein (am Tisch gewürfelt) und wird als `RollRecord` mit `manual: true` protokolliert.
 - Werte, die im Kampf wiederholt gebraucht werden, werden beim Kämpfer hinterlegt, nicht pro Aktion neu abgefragt.
 - Schaden immer über `Encounter._applyDamage` abziehen (Angriff und direkter Schaden nutzen dieselbe Stelle), damit die Regeln für 0 TP greifen: Monster gehen zu Boden, Spielercharaktere (`isPlayer`) machen Todesrettungswürfe.
@@ -57,6 +57,12 @@ Alle Dokumentation und das Projektwissen liegen im Obsidian-Vault `/home/dpillic
 - Ein Charakter im Kampf ist mit seinem Kämpfer verknüpft (`Combatant.characterId`). Den Zustand (TP, temporäre TP, Todesrettungswürfe, stabil, tot) schreibt `Encounter._save` zurück; neue Zustandsfelder dort und in `addCharacter` ergänzen.
 - Bogenwerte (Name, RK, maximale TP, Angriffe usw.) ändern sich nur über den Charakterbogen; danach `Encounter.applyCharacter` aufrufen. Beim Löschen `Encounter.forgetCharacter`.
 - Klasse bleibt Freitext, bis das Regelwerk (2014 oder 2024) feststeht. Erschöpfung ist bis zum wählbaren Regelwerk zurückgestellt.
+
+## Regelwerk
+
+- Wählbar in den Einstellungen (`AppSettings.ruleset`, `lib/settings/`), gespeichert in der Tabelle `settings`. Werte in `lib/rules/ruleset.dart` (`Ruleset`), voreingestellt 2014. Ziel: später alle Regelwerke abbilden.
+- Regeln, die sich zwischen den Regelwerken unterscheiden, fragen das eingestellte Regelwerk ab, statt eine Fassung fest einzubauen. Jede solche Regel bekommt Tests für jedes Regelwerk.
+- Neues Regelwerk: neuer Wert in `Ruleset`; die gespeicherte `id` eines Werts nie ändern.
 
 ## Datenbank
 

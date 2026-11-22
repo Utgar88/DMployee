@@ -5,6 +5,7 @@ import 'package:dmployee/characters/sqlite_character_repository.dart';
 import 'package:dmployee/combat/sqlite_encounter_store.dart';
 import 'package:dmployee/log/log_event.dart';
 import 'package:dmployee/log/sqlite_log_repository.dart';
+import 'package:dmployee/settings/sqlite_settings_repository.dart';
 import 'package:dmployee/storage/app_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -135,6 +136,62 @@ void main() {
       expect(await characters.all(), isEmpty);
       await characters.save(Character(name: 'Aria', maxHp: 20, armorClass: 16));
       expect((await characters.all()).single.name, 'Aria');
+    });
+
+    test('Eine Datenbank der dritten App-Version (mit Charakteren) wird um '
+        'die Einstellungen erweitert; Log, Kampfstand und Charaktere bleiben '
+        'erhalten', () async {
+      final directory = await Directory.systemTemp.createTemp('dmployee_db');
+      final path = '${directory.path}/dmployee.db';
+      addTearDown(() => directory.delete(recursive: true));
+      await createVersion1Database(path);
+      final version3 = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 3,
+          singleInstance: false,
+          onUpgrade: (db, oldVersion, newVersion) async {
+            await db.execute('''
+              CREATE TABLE encounter_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                payload TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE characters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload TEXT NOT NULL
+              )
+            ''');
+          },
+        ),
+      );
+      await SqliteEncounterStore(version3).save({'round': 4});
+      await SqliteCharacterRepository(version3)
+          .save(Character(name: 'Aria', maxHp: 20, armorClass: 16));
+      await version3.close();
+
+      final database = await openAppDatabase(
+        factory: databaseFactoryFfi,
+        path: path,
+      );
+      addTearDown(database.close);
+      final settings = SqliteSettingsRepository(database);
+
+      expect(
+        ((await SqliteLogRepository(database).entries()).single.event
+                as RoundEvent)
+            .round,
+        3,
+      );
+      expect(await SqliteEncounterStore(database).load(), {'round': 4});
+      expect(
+        (await SqliteCharacterRepository(database).all()).single.name,
+        'Aria',
+      );
+      expect(await settings.read('ruleset'), isNull);
+      await settings.write('ruleset', '5e-2024');
+      expect(await settings.read('ruleset'), '5e-2024');
     });
   });
 }

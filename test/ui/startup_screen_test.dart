@@ -4,17 +4,21 @@ import 'package:dmployee/characters/character_repository.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/log/log_repository.dart';
 import 'package:dmployee/main.dart';
+import 'package:dmployee/rules/ruleset.dart';
+import 'package:dmployee/settings/app_settings.dart';
+import 'package:dmployee/settings/settings_repository.dart';
 import 'package:dmployee/ui/dice_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-AppData appData() {
+AppData appData({AppSettings? settings}) {
   final log = InMemoryLogRepository();
   return (
     log: log,
     characters: InMemoryCharacterRepository(),
     encounter: Encounter(log: log)
       ..add(name: 'Aria', armorClass: 16, maxHp: 20),
+    settings: settings ?? AppSettings(),
   );
 }
 
@@ -94,6 +98,21 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Aria'), findsOneWidget);
+    });
+
+    testWidgets('Die beim Start geladenen Einstellungen gelten danach in der '
+        'App', (tester) async {
+      final settings = await AppSettings.load(InMemorySettingsRepository());
+      await settings.setRuleset(Ruleset.dnd2024);
+      await tester.pumpWidget(
+        DMployeeApp.starting(load: () async => appData(settings: settings)),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      await tester.tap(find.byKey(const Key('open-menu')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Regeln: D&D 5e (2024)'), findsOneWidget);
     });
 
     testWidgets('Schlägt das Laden fehl, steht eine Meldung da statt eines '
