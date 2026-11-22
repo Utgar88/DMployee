@@ -213,7 +213,7 @@ class _ShortRestScreenState extends State<ShortRestScreen> {
   Widget _card(BuildContext context, int index, Character character) {
     final theme = Theme.of(context);
     final reason = _reason(character);
-    final status = _results[index] ?? reason;
+    final status = [?_results[index], ?reason].join(' · ');
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -253,7 +253,7 @@ class _ShortRestScreenState extends State<ShortRestScreen> {
               ],
             ),
             if (_errors[index] case final error?) formError(context, error),
-            if (status != null)
+            if (status.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(status, key: Key('hit-die-result-$index')),

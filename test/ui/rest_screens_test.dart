@@ -320,6 +320,34 @@ void main() {
       expect(textOf(tester, 'hit-die-result-1'), 'TP voll');
     });
 
+    testWidgets('Nach dem letzten Trefferwürfel stehen Ergebnis und Grund '
+        'für die Sperre zusammen da', (tester) async {
+      final scene = Scene(faces: [5]);
+      await scene.aria(hp: 12, hitDiceSpent: 4);
+      await scene.pump(tester);
+      await startShortRest(tester);
+
+      await tapKey(tester, 'hit-die-0');
+
+      expect(enabled(tester, 'hit-die-0'), isFalse);
+      expect(
+        textOf(tester, 'hit-die-result-0'),
+        '+7 TP · keine Trefferwürfel übrig',
+      );
+    });
+
+    testWidgets('Füllt ein Trefferwürfel die TP auf, steht "TP voll" neben '
+        'dem Ergebnis', (tester) async {
+      final scene = Scene(faces: [10]);
+      await scene.aria(hp: 40);
+      await scene.pump(tester);
+      await startShortRest(tester);
+
+      await tapKey(tester, 'hit-die-0');
+
+      expect(textOf(tester, 'hit-die-result-0'), '+4 TP · TP voll');
+    });
+
     testWidgets('2024: mit 0 TP ist der Knopf gesperrt', (tester) async {
       final scene = Scene(ruleset: Ruleset.dnd2024);
       final aria = await scene.aria(hp: 0);
