@@ -3,6 +3,7 @@ import '../combat/condition.dart';
 import '../combat/damage.dart';
 import '../dice/dice_roller.dart';
 import '../dice/modifier.dart';
+import '../rules/exhaustion_rules.dart';
 import '../rules/rest_rules.dart';
 import '../rules/ruleset.dart';
 import 'log_event.dart';
@@ -68,12 +69,15 @@ class LogFormatter {
         LogSpan(
           event.massiveDamage
               ? '${event.name} stirbt sofort (massiver Schaden)'
+              : event.exhaustion
+              ? '${event.name} stirbt an Erschöpfung'
               : '${event.name} stirbt',
         ),
       ]),
       RestEvent() => _rest(event),
       HitDieEvent() => _hitDie(event),
       SpellSlotEvent() => _spellSlot(event),
+      ExhaustionEvent() => _exhaustion(event),
       UnknownEvent() => LogLine([
         LogSpan('Unbekannter Eintrag (${event.type})'),
       ]),
@@ -158,7 +162,13 @@ class LogFormatter {
       const LogSpan('Initiative: '),
       for (final (index, entry) in event.entries.indexed) ...[
         LogSpan('${index == 0 ? '' : ', '}${entry.name} '),
-        LogSpan('${entry.roll.total}', details: rollDetails(entry.roll)),
+        LogSpan(
+          '${entry.roll.total}',
+          details: [
+            ...rollDetails(entry.roll),
+            ?_exhaustionReason(entry.disadvantageFromExhaustion),
+          ],
+        ),
       ],
     ]);
   }
@@ -275,6 +285,26 @@ class LogFormatter {
     ]);
   }
 
+  LogLine _exhaustion(ExhaustionEvent event) {
+    final ruleset = Ruleset.byId(event.ruleset);
+    final details = [
+      'Stufe: ${event.before} → ${event.after}',
+      'Regelwerk: ${ruleset?.label ?? event.ruleset}',
+      ...?ruleset?.exhaustionEffects(event.after),
+    ];
+    if (event.after == 0) {
+      return LogLine([
+        LogSpan('${event.name} ist nicht mehr '),
+        LogSpan('erschöpft', details: details),
+      ]);
+    }
+    final word = event.after > event.before ? 'erschöpft' : 'weniger erschöpft';
+    return LogLine([
+      LogSpan('${event.name} ist $word: '),
+      LogSpan('Stufe ${event.after}', details: details),
+    ]);
+  }
+
   LogLine _spellSlot(SpellSlotEvent event) {
     final slot =
         '${event.pact ? 'Paktmagie-Platz' : 'Zauberplatz'} '
@@ -313,8 +343,13 @@ class LogFormatter {
 
   /// `vergiftet` for `poisoned`; the stored name itself if this app version
   /// does not know the condition.
-  String _conditionWord(String name) =>
-      Condition.fromName(name)?.label.toLowerCase() ?? name;
+  String _conditionWord(String name) => name == exhaustionCondition
+      ? 'erschöpft'
+      : Condition.fromName(name)?.label.toLowerCase() ?? name;
+
+  /// Detail line for disadvantage from exhaustion [level]; null without.
+  String? _exhaustionReason(int? level) =>
+      level == null ? null : 'Nachteil: erschöpft (Stufe $level)';
 
   LogLine _condition(ConditionEvent event) {
     final word = _conditionWord(event.condition);
@@ -402,6 +437,7 @@ class LogFormatter {
         '${roll.total}',
         details: [
           ...rollDetails(roll),
+          ?_exhaustionReason(event.disadvantageFromExhaustion),
           'Erfolg ab 10',
           'Erfolge: ${event.successes} von 3',
           'Fehlschläge: ${event.failures} von 3',

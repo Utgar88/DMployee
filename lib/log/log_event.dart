@@ -4,6 +4,7 @@ import '../dice/modifier.dart';
 import 'roll_record.dart';
 
 part 'combat_events.dart';
+part 'exhaustion_events.dart';
 part 'rest_events.dart';
 part 'spell_slot_events.dart';
 
@@ -40,6 +41,7 @@ sealed class LogEvent {
       RestEvent.typeName => RestEvent.fromJson(json),
       HitDieEvent.typeName => HitDieEvent.fromJson(json),
       SpellSlotEvent.typeName => SpellSlotEvent.fromJson(json),
+      ExhaustionEvent.typeName => ExhaustionEvent.fromJson(json),
       _ => UnknownEvent(type, json),
     };
   }

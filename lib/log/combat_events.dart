@@ -22,7 +22,8 @@ class ConditionEffect {
   /// True if the attacker has the condition, false if the target has it.
   final bool onAttacker;
 
-  /// Name of the `Condition` value, e.g. `poisoned`.
+  /// Name of the `Condition` value, e.g. `poisoned`, or
+  /// [exhaustionCondition].
   final String condition;
 
   /// True for advantage, false for disadvantage.
@@ -218,10 +219,17 @@ class AttackEvent extends LogEvent {
 
 /// Initiative result of one combatant.
 class InitiativeEntry {
-  const InitiativeEntry({required this.name, required this.roll});
+  const InitiativeEntry({
+    required this.name,
+    required this.roll,
+    this.disadvantageFromExhaustion,
+  });
 
   final String name;
   final RollRecord roll;
+
+  /// Exhaustion level that gave disadvantage on the roll; null if none did.
+  final int? disadvantageFromExhaustion;
 }
 
 /// Initiative was rolled; [entries] are in turn order.
@@ -234,6 +242,8 @@ class InitiativeEvent extends LogEvent {
         InitiativeEntry(
           name: (entry as Map)['name']! as String,
           roll: _roll(entry['roll']),
+          disadvantageFromExhaustion:
+              entry['disadvantageFromExhaustion'] as int?,
         ),
     ]);
   }
@@ -249,7 +259,11 @@ class InitiativeEvent extends LogEvent {
   Map<String, Object?> toJson() => {
     'entries': [
       for (final entry in entries)
-        {'name': entry.name, 'roll': entry.roll.toJson()},
+        {
+          'name': entry.name,
+          'roll': entry.roll.toJson(),
+          'disadvantageFromExhaustion': ?entry.disadvantageFromExhaustion,
+        },
     ],
   };
 }
@@ -384,6 +398,7 @@ class DeathSaveEvent extends LogEvent {
     required this.roll,
     required this.successes,
     required this.failures,
+    this.disadvantageFromExhaustion,
   });
 
   factory DeathSaveEvent.fromJson(Map<String, Object?> json) {
@@ -392,6 +407,7 @@ class DeathSaveEvent extends LogEvent {
       roll: _roll(json['roll']),
       successes: json['successes']! as int,
       failures: json['failures']! as int,
+      disadvantageFromExhaustion: json['disadvantageFromExhaustion'] as int?,
     );
   }
 
@@ -404,6 +420,9 @@ class DeathSaveEvent extends LogEvent {
   final int successes;
   final int failures;
 
+  /// Exhaustion level that gave disadvantage on the roll; null if none did.
+  final int? disadvantageFromExhaustion;
+
   @override
   String get type => typeName;
 
@@ -413,6 +432,7 @@ class DeathSaveEvent extends LogEvent {
     'roll': roll.toJson(),
     'successes': successes,
     'failures': failures,
+    'disadvantageFromExhaustion': ?disadvantageFromExhaustion,
   };
 }
 
@@ -474,12 +494,17 @@ class CombatantStableEvent extends LogEvent {
 
 /// A player character died.
 class CombatantDiedEvent extends LogEvent {
-  const CombatantDiedEvent(this.name, {this.massiveDamage = false});
+  const CombatantDiedEvent(
+    this.name, {
+    this.massiveDamage = false,
+    this.exhaustion = false,
+  });
 
   factory CombatantDiedEvent.fromJson(Map<String, Object?> json) {
     return CombatantDiedEvent(
       json['name']! as String,
       massiveDamage: json['massiveDamage'] as bool? ?? false,
+      exhaustion: json['exhaustion'] as bool? ?? false,
     );
   }
 
@@ -491,6 +516,9 @@ class CombatantDiedEvent extends LogEvent {
   /// the hit point maximum, instead of by three failed death saving throws.
   final bool massiveDamage;
 
+  /// Died from reaching the highest exhaustion level.
+  final bool exhaustion;
+
   @override
   String get type => typeName;
 
@@ -498,6 +526,7 @@ class CombatantDiedEvent extends LogEvent {
   Map<String, Object?> toJson() => {
     'name': name,
     'massiveDamage': massiveDamage,
+    if (exhaustion) 'exhaustion': true,
   };
 }
 
