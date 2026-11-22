@@ -109,7 +109,10 @@ class _RestDialogState extends State<RestDialog> {
       ),
       title: Text(character.name),
       subtitle: blocker == null
-          ? Text('TP ${character.hp}/${character.maxHp}')
+          ? Text(
+              'TP ${character.hp}/'
+              '${character.maxHpUnder(widget.rests.ruleset)}',
+            )
           : Text(
               'kein Nutzen: ${restBlockerText(blocker, character)}',
               key: Key('rest-blocker-$index'),
@@ -176,7 +179,9 @@ class _ShortRestScreenState extends State<ShortRestScreen> {
       return 'kein Nutzen: ${restBlockerText(b, character)}';
     }
     if (character.hitDiceRemaining == 0) return 'keine Trefferwürfel übrig';
-    if (character.hp >= character.maxHp) return 'TP voll';
+    if (character.hp >= character.maxHpUnder(widget.rests.ruleset)) {
+      return 'TP voll';
+    }
     return null;
   }
 
@@ -222,7 +227,8 @@ class _ShortRestScreenState extends State<ShortRestScreen> {
           children: [
             Text(character.name, style: theme.textTheme.titleMedium),
             Text(
-              'TP ${character.hp}/${character.maxHp} · Trefferwürfel '
+              'TP ${character.hp}/'
+              '${character.maxHpUnder(widget.rests.ruleset)} · Trefferwürfel '
               '${character.hitDiceRemaining}/${character.hitDiceTotal} '
               '(W${character.hitDie})',
               key: Key('short-rest-stats-$index'),

@@ -620,7 +620,7 @@ class _CombatScreenState extends State<CombatScreen> {
                 TextButton.icon(
                   key: Key('exhaustion-$index'),
                   onPressed: () => _openExhaustion(combatant),
-                  icon: const Icon(Icons.bedtime_outlined, size: 18),
+                  icon: const Icon(Icons.battery_alert_outlined, size: 18),
                   label: const Text('Erschöpfung'),
                 ),
                 TextButton.icon(

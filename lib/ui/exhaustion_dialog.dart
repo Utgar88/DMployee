@@ -122,8 +122,24 @@ class _ExhaustionDialogState extends State<ExhaustionDialog> {
               ),
               const SizedBox(height: 8),
               Text('Folgen', style: theme.textTheme.titleSmall),
-              if (effects.isEmpty) const Text('Keine Folgen'),
-              for (final effect in effects) Text(effect),
+              // Room for the longest list, so the buttons above stay put
+              // while the level changes.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight:
+                      maxExhaustion *
+                      MediaQuery.textScalerOf(context)
+                          .scale(theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                      (theme.textTheme.bodyMedium?.height ?? 1.43),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (effects.isEmpty) const Text('Keine Folgen'),
+                    for (final effect in effects) Text(effect),
+                  ],
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 'Eine lange Rast senkt die Erschöpfung um 1.',

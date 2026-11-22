@@ -35,18 +35,23 @@ class Scene {
   late final encounter = Encounter(log: log, characters: characters);
   late final RestService rests;
 
-  Future<Character> aria({int hp = 44, int hitDiceSpent = 0}) =>
-      characters.save(
-        Character(
-          name: 'Aria',
-          level: 5,
-          abilityScores: {Ability.constitution: 14},
-          maxHp: 44,
-          armorClass: 18,
-          hitDie: 10,
-          hp: hp,
-        )..hitDiceSpent = hitDiceSpent,
-      );
+  Future<Character> aria({
+    int hp = 44,
+    int hitDiceSpent = 0,
+    int exhaustion = 0,
+  }) => characters.save(
+    Character(
+        name: 'Aria',
+        level: 5,
+        abilityScores: {Ability.constitution: 14},
+        maxHp: 44,
+        armorClass: 18,
+        hitDie: 10,
+        hp: hp,
+      )
+      ..hitDiceSpent = hitDiceSpent
+      ..exhaustion = exhaustion,
+  );
 
   Future<Character> borin({int hp = 24, bool dead = false}) => characters.save(
     Character(name: 'Borin', level: 4, maxHp: 24, armorClass: 16, hp: hp)
@@ -383,5 +388,24 @@ void main() {
     await scene.pump(tester);
 
     expect(textOf(tester, 'character-hit-dice-0'), 'Trefferwürfel 3/5 (W10)');
+  });
+
+  group('Rasten bei Erschöpfung', () {
+    testWidgets('2014: Auswahl und Trefferwürfel-Seite zeigen das halbierte '
+        'Maximum; bei vollen halbierten TP heißt es "TP voll"', (tester) async {
+      final scene = Scene();
+      await scene.aria(hp: 22, hitDiceSpent: 1, exhaustion: 4);
+      await scene.pump(tester);
+
+      await tapKey(tester, 'rest');
+      expect(find.text('TP 22/22'), findsOneWidget);
+
+      await tapKey(tester, 'rest-confirm');
+      expect(
+        textOf(tester, 'short-rest-stats-0'),
+        'TP 22/22 · Trefferwürfel 4/5 (W10)',
+      );
+      expect(find.text('TP voll'), findsOneWidget);
+    });
   });
 }

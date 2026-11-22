@@ -242,7 +242,7 @@ class _CharactersScreenState extends State<CharactersScreen> {
                       tooltip: 'Erschöpfung',
                       visualDensity: VisualDensity.compact,
                       onPressed: () => _openExhaustion(service, character),
-                      icon: const Icon(Icons.bedtime_outlined),
+                      icon: const Icon(Icons.battery_alert_outlined),
                     ),
                   if (inCombat)
                     Chip(

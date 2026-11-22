@@ -1,6 +1,7 @@
 import 'package:dmployee/characters/character.dart';
 import 'package:dmployee/characters/character_repository.dart';
 import 'package:dmployee/characters/exhaustion.dart';
+import 'package:dmployee/characters/rest.dart';
 import 'package:dmployee/combat/attack.dart';
 import 'package:dmployee/combat/encounter.dart';
 import 'package:dmployee/dice/dice_expression.dart';
@@ -140,6 +141,54 @@ void main() {
       expect((await scene.stored(aria)).exhaustion, 1);
       expect(await scene.events(), hasLength(3));
       expect(textOf(tester, 'character-exhaustion-0'), 'Erschöpfung: Stufe 1');
+    });
+
+    testWidgets('Die Knöpfe bleiben beim Ändern der Stufe an ihrem Platz', (
+      tester,
+    ) async {
+      final scene = Scene();
+      await scene.aria();
+      await scene.pumpList(tester);
+      await tapKey(tester, 'exhaustion-0');
+      final up = tester.getCenter(find.byKey(const Key('exhaustion-up')));
+
+      for (var level = 1; level <= 5; level++) {
+        await tapKey(tester, 'exhaustion-up');
+        expect(tester.getCenter(find.byKey(const Key('exhaustion-up'))), up);
+      }
+    });
+
+    testWidgets('Erschöpfung hat ein anderes Symbol als die Rast', (
+      tester,
+    ) async {
+      final scene = Scene();
+      await scene.aria();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CharactersScreen(
+            characters: scene.characters,
+            encounter: scene.encounter,
+            exhaustion: scene.exhaustion,
+            rests: RestService(
+              characters: scene.characters,
+              log: scene.log,
+              settings: scene.settings,
+              encounter: scene.encounter,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      IconData iconOf(String key) => tester
+          .widget<Icon>(
+            find.descendant(
+              of: find.byKey(Key(key)),
+              matching: find.byType(Icon),
+            ),
+          )
+          .icon!;
+      expect(iconOf('exhaustion-0'), isNot(iconOf('rest')));
     });
 
     testWidgets('Bei Stufe 0 ist "senken" gesperrt', (tester) async {
